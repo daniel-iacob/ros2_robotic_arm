@@ -4,7 +4,7 @@ FROM ros:jazzy
 WORKDIR /ros2_robotic_arm
 
 # Install everything needed for GUI application to be visible because 
-#they are running inside a container
+# they are running inside a container
 RUN apt-get update && apt-get install -y \
     libx11-xcb1 \
     libxcb-dri3-0 \
