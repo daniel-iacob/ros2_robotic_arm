@@ -28,11 +28,15 @@ RUN if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then \
 # WARNING: Use with caution as it may cause conflicts between pip and system packages.
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
-# Source ROS 2 setup.bash in bashrc so that every new terminal 
-# has ROS 2 environment sourced
-RUN echo "source /opt/ros/jazzy/setup.bash" >> /root/.bashrc
-
-# ENTRYPOINT ["/entrypoint.sh"]
+# Move to root
+# Reason: Docker convention for initialization scripts
+# - Separation of concerns — initialization scripts are container infrastructure, not application code
+# - Independence — works regardless of WORKDIR changes later
+# - Convention — entrypoints and initialization scripts typically live at root level in Docker
+# - Clarity — clearly distinguishes system scripts from application files
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
 
 # When the container is started, open a bash terminal
 # This terminal gives access to the container with ROS 2 environment installed
