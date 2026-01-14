@@ -24,8 +24,13 @@
     "customizations": {
         "vscode": {
             "extensions": [
+                "ms-vscode-remote.remote-containers",
+                "ms-iot.vscode-ros",
                 "ms-python.python",
-                "ms-iot.vscode-ros"
+                "ms-vscode.cpptools",
+                "smilerobotics.urdf",
+                "redhat.vscode-xml",
+                "hadolint.hadolint"
             ]
         }
     }
