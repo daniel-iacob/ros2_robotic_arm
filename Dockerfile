@@ -43,4 +43,4 @@ ENTRYPOINT ["/entrypoint.sh"]
 
 # When the container is started, open a bash terminal
 # This terminal gives access to the container with ROS 2 environment installed
-CMD ["bash"] 
+CMD ["bash"]
