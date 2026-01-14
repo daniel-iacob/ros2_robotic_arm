@@ -11,8 +11,15 @@ RUN apt-get update && apt-get install -y \
     libxtst6 \
     libxrender1 \
     libxshmfence1 \
-    libglu1-mesa \
-    && rm -rf /var/lib/apt/lists/*
+    libglu1-mesa
+
+# Development tools
+RUN apt-get update && apt-get install -y \
+    ros-jazzy-rqt \
+    ros-jazzy-rqt-common-plugins
+
+# Clean up apt cache to reduce image size
+RUN rm -rf /var/lib/apt/lists/*
 
 # Fix: Initialize rosdep only if not already initialized, and run update
 # rosdep is used to install packages
