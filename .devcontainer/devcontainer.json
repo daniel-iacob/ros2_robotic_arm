@@ -1,0 +1,32 @@
+{
+    "name": "ros2_robotic_arm",
+    "build": {
+        "dockerfile": "../Dockerfile",
+        "context": ".."
+    },
+    "runArgs": [
+        "--net=host",
+        "--privileged",
+        "-e", "DISPLAY=${env:DISPLAY}",
+        "-e", "XAUTHORITY=/tmp/.docker.xauth",
+        "-v", "/tmp/.X11-unix:/tmp/.X11-unix",
+        "-v", "/run/user/1000/gdm/Xauthority:/tmp/.docker.xauth"
+    ],
+    "containerEnv": {
+        "QT_QPA_PLATFORM": "xcb",
+        "XAUTHORITY": "/tmp/.docker.xauth"
+    },
+    "workspaceFolder": "/ros2_robotic_arm",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_robotic_arm,type=bind",
+    "remoteUser": "root",
+    "updateRemoteUserUID": true,
+    "postStartCommand": "chown -R 1000:1000 /ros2_robotic_arm",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-iot.vscode-ros"
+            ]
+        }
+    }
+}
