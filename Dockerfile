@@ -31,16 +31,6 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 # source ros2 so that its available automatically in every opened terminal
 RUN echo "source /opt/ros/jazzy/setup.bash" >> /root/.bashrc
 
-# Move to root and run
-# Reason: Docker convention for initialization scripts
-# - Separation of concerns — initialization scripts are container infrastructure, not application code
-# - Independence — works regardless of WORKDIR changes later
-# - Convention — entrypoints and initialization scripts typically live at root level in Docker
-# - Clarity — clearly distinguishes system scripts from application files
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-
 # When the container is started, open a bash terminal
 # This terminal gives access to the container with ROS 2 environment installed
 CMD ["bash"]
