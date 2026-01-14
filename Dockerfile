@@ -28,7 +28,10 @@ RUN if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then \
 # WARNING: Use with caution as it may cause conflicts between pip and system packages.
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
-# Move to root
+# source ros2 so that its available automatically in every opened terminal
+RUN echo "source /opt/ros/jazzy/setup.bash" >> /root/.bashrc
+
+# Move to root and run
 # Reason: Docker convention for initialization scripts
 # - Separation of concerns — initialization scripts are container infrastructure, not application code
 # - Independence — works regardless of WORKDIR changes later

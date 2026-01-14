@@ -7,7 +7,9 @@ set -e
 
 # Source ROS 2 setup.bash in bashrc so that every new terminal 
 # has ROS 2 environment sourced
-echo "source /opt/ros/jazzy/setup.bash" >> /root/.bashrc
+if ! grep -q "source /opt/ros/jazzy/setup.bash" /root/.bashrc; then
+    echo "source /opt/ros/jazzy/setup.bash" >> /root/.bashrc
+fi
 
 echo "Entrypoint script executed" # temp
 
