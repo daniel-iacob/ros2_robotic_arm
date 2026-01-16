@@ -14,3 +14,6 @@ The only tool that has to be manually installed is Docker.
 4. Run the container: docker run -it ros2-robotic-arm
 
 All the other dependencies are automatically installed
+
+## VSCode
+VSCode is prefered as it has some useful extensions for ROS and Docker
