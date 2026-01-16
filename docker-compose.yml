@@ -1,0 +1,14 @@
+services:
+  ros2-robotic-arm:
+    image: ros2-robotic-arm
+    network_mode: host
+    ipc: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    devices:
+      - /dev/dri:/dev/dri
+    stdin_open: true
+    tty: true
