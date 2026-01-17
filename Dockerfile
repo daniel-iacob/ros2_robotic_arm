@@ -1,4 +1,5 @@
-FROM ros:jazzy
+# FROM ros:jazzy
+FROM osrf/ros:jazzy-desktop
 
 WORKDIR /ros2_robotic_arm
 
@@ -12,10 +13,12 @@ RUN apt-get update && apt-get install -y \
     libxshmfence1 \
     libglu1-mesa
 
+
 # Development tools
 RUN apt-get update && apt-get install -y \
-    ros-jazzy-rqt \
-    ros-jazzy-rqt-common-plugins
+    ros-jazzy-ros2-control \
+    ros-jazzy-ros2-controllers \
+    ros-jazzy-xacro
 
 # Clean up apt cache to reduce image size
 RUN rm -rf /var/lib/apt/lists/*
