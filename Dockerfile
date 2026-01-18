@@ -1,6 +1,6 @@
-FROM ros:jazzy
+# FROM ros:jazzy
+FROM osrf/ros:jazzy-desktop
 
-# Set workdir
 WORKDIR /ros2_robotic_arm
 
 # Install everything needed for GUI application to be visible because 
@@ -13,10 +13,13 @@ RUN apt-get update && apt-get install -y \
     libxshmfence1 \
     libglu1-mesa
 
+
 # Development tools
 RUN apt-get update && apt-get install -y \
-    ros-jazzy-rqt \
-    ros-jazzy-rqt-common-plugins
+    ros-jazzy-ros2-control \
+    ros-jazzy-ros2-controllers \
+    ros-jazzy-joint-state-publisher-gui \
+    ros-jazzy-xacro
 
 # Clean up apt cache to reduce image size
 RUN rm -rf /var/lib/apt/lists/*
@@ -37,6 +40,13 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 # source ros2 so that its available automatically in every opened terminal
 RUN echo "source /opt/ros/jazzy/setup.bash" >> /root/.bashrc
+
+
+# Build the custom packages
+RUN colcon build --packages-select robotic_arm_description
+
+# For custom packages
+# RUN echo "source /ros2_robotic_arm/install/setup.bash" >> ~/.bashrc
 
 # When the container is started, open a bash terminal
 # This terminal gives access to the container with ROS 2 environment installed
