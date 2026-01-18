@@ -23,13 +23,16 @@
         "vscode": {
             "extensions": [
                 "ms-vscode-remote.remote-containers",
-                "ms-iot.vscode-ros",
+                "ranch-hand-robotics.rde-ros-2",
+                "ranch-hand-robotics.urdf-editor",
+                "ranch-hand-robotics.rde-pack",
                 "ms-python.python",
                 "ms-vscode.cpptools",
                 "smilerobotics.urdf",
                 "redhat.vscode-xml",
                 "hadolint.hadolint",
-                "ms-vscode.cmake-tools"
+                "ms-vscode.cmake-tools",
+                "charliermarsh.ruff"
             ]
         }
     }
