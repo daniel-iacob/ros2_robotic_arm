@@ -1,5 +1,5 @@
 # ros2_robotic_arm
-Use ros2 to control a robotic arm. Simulation in Gazebo
+Use ros2 to control a robotic arm
 
 It runs inside a Docker container so that the environment can be isolated.
 
@@ -16,7 +16,8 @@ The only tool that has to be manually installed is Docker.
 All the other dependencies are automatically installed
 
 ## VSCode
-VSCode is prefered as it has some useful extensions for ROS and Docker
+VSCode is prefered as it has some useful extensions for ROS and Docker:
+https://code.visualstudio.com/docs/setup/linux
 
 ## Usage
 Everything runs in a docker container (like a small virtual machine).
@@ -36,3 +37,8 @@ There are two ways to start:
     - ./build_container.sh
     - ./run_container_gui.sh
 
+
+## Status
+- Install everything from scripts (configuration as code)
+- Run inside docker container
+- Robot description
