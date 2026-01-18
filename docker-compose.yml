@@ -6,10 +6,11 @@ services:
     environment:
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
-      - XAUTHORITY=/tmp/.docker.xauth  # Added for security/auth
-    volumes:    c
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw # Added :rw (read-write)
-      - /tmp/.docker.xauth:/tmp/.docker.xauth:rw # Added for auth
+      - XAUTHORITY=/tmp/.docker.xauth
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /tmp/.docker.xauth:/tmp/.docker.xauth:rw
+      - .:/ros2_robotic_arm  # Make sure you add this to see your code!
     devices:
       - /dev/dri:/dev/dri
     stdin_open: true
