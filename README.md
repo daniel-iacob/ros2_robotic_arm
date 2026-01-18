@@ -19,6 +19,8 @@ All the other dependencies are automatically installed
 VSCode is prefered as it has some useful extensions for ROS and Docker:
 https://code.visualstudio.com/docs/setup/linux
 
+Make sure you install all recomended extensions
+
 ## Usage
 Everything runs in a docker container (like a small virtual machine).
 The official container osrf/ros:jazzy-desktop is used.
@@ -42,3 +44,8 @@ There are two ways to start:
 - Install everything from scripts (configuration as code)
 - Run inside docker container
 - Robot description
+
+## Useful ROS2 commands
+- ros2 node list
+- ros2 topic echo /tf
+- ros2 run tf2_tools view_frames
