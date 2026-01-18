@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y \
 RUN apt-get update && apt-get install -y \
     ros-jazzy-ros2-control \
     ros-jazzy-ros2-controllers \
+    ros-jazzy-joint-state-publisher-gui \
     ros-jazzy-xacro
 
 # Clean up apt cache to reduce image size
@@ -39,6 +40,10 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 # source ros2 so that its available automatically in every opened terminal
 RUN echo "source /opt/ros/jazzy/setup.bash" >> /root/.bashrc
+
+
+# Build the custom packages
+RUN colcon build --packages-select robotic_arm_description
 
 # For custom packages
 # RUN echo "source /ros2_robotic_arm/install/setup.bash" >> ~/.bashrc
