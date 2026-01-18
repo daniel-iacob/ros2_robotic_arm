@@ -32,7 +32,8 @@
                 "redhat.vscode-xml",
                 "hadolint.hadolint",
                 "ms-vscode.cmake-tools",
-                "charliermarsh.ruff"
+                "charliermarsh.ruff",
+                "tamasfe.even-better-toml"
             ]
         }
     }

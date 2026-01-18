@@ -1,0 +1,13 @@
+[tool.ruff]
+# Target version for ROS 2 Jazzy (Ubuntu 24.04 uses Python 3.12)
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+# Enable Pyflakes (F), Pycodestyle (E, W), and Isort (I)
+select = ["E", "F", "W", "I"]
+# ignore = ["D100", "D101"] # Ignore missing docstring errors while learning
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
