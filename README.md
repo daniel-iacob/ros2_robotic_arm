@@ -17,3 +17,11 @@ All the other dependencies are automatically installed
 
 ## VSCode
 VSCode is prefered as it has some useful extensions for ROS and Docker
+
+
+## GUI workaround while using devcontainers
+If a GUI apllication doesn't start from dev container, run
+```bash
+xhost +local:docker
+```
+before starting devcontaoiners from VSCode
