@@ -8,13 +8,11 @@
         "--net=host",
         "--privileged",
         "-e", "DISPLAY=${env:DISPLAY}",
-        "-e", "XAUTHORITY=/tmp/.docker.xauth",
         "-v", "/tmp/.X11-unix:/tmp/.X11-unix",
-        "-v", "/run/user/1000/gdm/Xauthority:/tmp/.docker.xauth"
+        "-v", "${env:HOME}/.Xauthority:/root/.Xauthority:rw"
     ],
     "containerEnv": {
-        "QT_QPA_PLATFORM": "xcb",
-        "XAUTHORITY": "/tmp/.docker.xauth"
+        "XAUTHORITY": "/root/.Xauthority"
     },
     "workspaceFolder": "/ros2_robotic_arm",
     "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_robotic_arm,type=bind",
@@ -30,7 +28,8 @@
                 "ms-vscode.cpptools",
                 "smilerobotics.urdf",
                 "redhat.vscode-xml",
-                "hadolint.hadolint"
+                "hadolint.hadolint",
+                "ms-vscode.cmake-tools"
             ]
         }
     }
