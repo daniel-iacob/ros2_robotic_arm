@@ -8,10 +8,10 @@ It runs inside a Docker container so that the environment can be isolated.
 - ROS2 jazzy (docker images used)
 - Docker 28.1.1
 
-## Instalation and run
+## Instalation
 The only tool that has to be manually installed is Docker.
-1. Install docker: https://docs.docker.com/desktop/setup/install/linux/ubuntu/
-2. Clone this repository
+
+Install docker: https://docs.docker.com/desktop/setup/install/linux/ubuntu/
 
 All the other dependencies are automatically installed
 
