@@ -37,7 +37,7 @@ There are two ways to start:
     - just click op "Reopen in Container button". It will appear when opening the folder in VSCode
 - Manually open a terminal and run: 
     - ./build_container.sh
-    - ./run_container_gui.sh
+    - ./run_container.sh
 
 
 ## Status
