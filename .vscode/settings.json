@@ -14,5 +14,6 @@
             "source.organizeImports.ruff": "explicit"
         }
     },
-    "ruff.nativeServer": true
+    "ruff.nativeServer": true,
+    "ROS2.distro": "jazzy"
 }
