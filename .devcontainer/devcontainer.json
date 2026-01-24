@@ -4,9 +4,13 @@
         "dockerfile": "../Dockerfile",
         "context": ".."
     },
+    // 1. Grant permission ON THE HOST before the container starts
+    "initializeCommand": "xhost +local:root",
+    
     "runArgs": [
         "--net=host",
         "--privileged",
+        "--ipc=host", // Added for smoother RViz performance
         "-e", "DISPLAY=${env:DISPLAY}",
         "-v", "/tmp/.X11-unix:/tmp/.X11-unix",
         "-v", "${env:HOME}/.Xauthority:/root/.Xauthority:rw"
@@ -18,7 +22,10 @@
     "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_robotic_arm,type=bind",
     "remoteUser": "root",
     "updateRemoteUserUID": true,
-    "postStartCommand": "chown -R 1000:1000 /ros2_robotic_arm",
+    
+    // 2. Fix permissions inside and notify the user
+    "postStartCommand": "chown -R 1000:1000 /ros2_robotic_arm && echo 'GUI Access Enabled'",
+
     "customizations": {
         "vscode": {
             "extensions": [

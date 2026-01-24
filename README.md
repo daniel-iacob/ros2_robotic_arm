@@ -39,6 +39,14 @@ There are two ways to start:
     - ./build_container.sh
     - ./run_container.sh
 
+## Important
+If the rviz or other GUI is not opening, when running from container,
+execute on the host terminal
+```bash
+xhost +local:root
+```
+This command gives permission to the applications from the container to show the GUI (Graphical User Interface) on the host pc.
+
 
 ## Status
 - Install everything from scripts (configuration as code)
@@ -49,3 +57,37 @@ There are two ways to start:
 - ros2 node list
 - ros2 topic echo /tf
 - ros2 run tf2_tools view_frames
+
+## Workflow
+
+```mermaid
+
+graph TD
+    subgraph "1. Environment Setup"
+        A[Open Project in VS Code] --> B[Host runs: xhost +local:root]
+        B --> C[Build Docker Container]
+        C --> D[rosdep install dependencies]
+    end
+
+    subgraph "2. Development & Build"
+        D --> E[Develop Python/C++ Nodes & URDF]
+        E --> F[colcon build --symlink-install]
+        F --> G[source install/setup.bash]
+    end
+
+    subgraph "3. Execution & GUI"
+        G --> H[ros2 launch robotic_arm_description]
+        H --> I[RViz2 & Joint State GUI Pops Up]
+        I --> J[Control Real/Simulated Hardware]
+    end
+
+    subgraph "4. Cleanup"
+        J --> K[Close VS Code]
+        K --> L[Host runs: xhost -local:root]
+    end
+
+    %% Visual Styling
+    style C fill:#f96,stroke:#333
+    style F fill:#bbf,stroke:#333
+    style I fill:#dfd,stroke:#333
+```
