@@ -89,3 +89,40 @@ graph TD
     end
 ```
 </details>
+
+
+## ROS_CONTROL
+```mermaid
+
+graph LR
+    subgraph "High Level (Brain)"
+        A[Joint Trajectory Controller]
+    end
+
+    subgraph "ros2_control Framework"
+        B{Controller Manager}
+        C[Command Interface]
+        D[State Interface]
+    end
+
+    subgraph "Hardware (Muscle)"
+        E[Mock Hardware Plugin]
+    end
+
+    subgraph "Visualization"
+        F[Joint State Broadcaster]
+        G[RViz2]
+    end
+
+    %% Flow of Commands
+    A -->|Goal Position| B
+    B --> C
+    C -->|Set Angle| E
+
+    %% Flow of Feedback
+    E -->|Current Angle| D
+    D --> F
+    F -->|/joint_states| G
+    D -.->|Feedback| B
+
+```
