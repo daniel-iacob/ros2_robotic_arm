@@ -36,8 +36,7 @@ There are two ways to start:
     - it will do automatically the steps 1 and 2 (build and run)
     - just click op "Reopen in Container button". It will appear when opening the folder in VSCode
 - Manually open a terminal and run: 
-    - ./build_container.sh
-    - ./run_container.sh
+    - ./build_and_run_container.sh
 
 ## Important
 If the rviz or other GUI is not opening, when running from container,
