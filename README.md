@@ -59,6 +59,8 @@ This command gives permission to the applications from the container to show the
 - ros2 run tf2_tools view_frames
 
 ## Workflow
+<details>
+<summary><b>Workflow Diagram</b></summary>
 
 ```mermaid
 
@@ -91,3 +93,4 @@ graph TD
     style F fill:#bbf,stroke:#333
     style I fill:#dfd,stroke:#333
 ```
+</details>
