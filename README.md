@@ -57,6 +57,7 @@ This command gives permission to the applications from the container to show the
 - ros2 node list
 - ros2 topic echo /tf
 - ros2 run tf2_tools view_frames
+- rm -rf build/ install/ log/
 
 ## Workflow
 <details>
@@ -125,4 +126,18 @@ graph LR
     F -->|/joint_states| G
     D -.->|Feedback| B
 
+```
+
+### Launch sequence
+
+```mermaid
+graph TD
+    A[Launch File] --> B[Robot State Publisher]
+    A --> C[Controller Manager Node]
+    C -->|Reads| D[URDF + YAML]
+    A --> E[Spawn: joint_state_broadcaster]
+    A --> F[Spawn: arm_controller]
+
+    E -->|Success| G[RViz shows Robot]
+    F -->|Success| H[Ready for Commands]
 ```
