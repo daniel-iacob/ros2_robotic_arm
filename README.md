@@ -87,10 +87,5 @@ graph TD
         J --> K[Close VS Code]
         K --> L[Host runs: xhost -local:root]
     end
-
-    %% Visual Styling
-    style C fill:#f96,stroke:#333
-    style F fill:#bbf,stroke:#333
-    style I fill:#dfd,stroke:#333
 ```
 </details>
