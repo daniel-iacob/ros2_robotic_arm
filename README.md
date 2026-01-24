@@ -27,17 +27,21 @@ The official container osrf/ros:jazzy-desktop is used.
 And the custom tools/packages are installed over it.
 
 Steps:
-1. build the container (official image + general dependencies)
-2. run the container with gui support (so that application like rviz and rqt can start in GUI mode)
-3. build robotic arm project packages
+1. build and run the container (official image + general dependencies)
+2. build robotic arm project packages
+3. start the entire simulation
 
-There are two ways to start:
+There are two ways to start the container:
 - VSCode DevContainers: 
     - it will do automatically the steps 1 and 2 (build and run)
     - just click op "Reopen in Container button". It will appear when opening the folder in VSCode
 - Manually open a terminal and run: 
-    - ./build_container.sh
-    - ./run_container.sh
+    - ./build_and_run_container.sh
+
+After the container is started
+```bash
+./start_simulation.sh
+```
 
 ## Important
 If the rviz or other GUI is not opening, when running from container,
@@ -52,11 +56,13 @@ This command gives permission to the applications from the container to show the
 - Install everything from scripts (configuration as code)
 - Run inside docker container
 - Robot description
+- Move robot from script (inside controller package)
 
 ## Useful ROS2 commands
 - ros2 node list
 - ros2 topic echo /tf
 - ros2 run tf2_tools view_frames
+- rm -rf build/ install/ log/
 
 ## Workflow
 <details>
@@ -89,3 +95,54 @@ graph TD
     end
 ```
 </details>
+
+
+## ROS_CONTROL
+```mermaid
+
+graph LR
+    subgraph "High Level (Brain)"
+        A[Joint Trajectory Controller]
+    end
+
+    subgraph "ros2_control Framework"
+        B{Controller Manager}
+        C[Command Interface]
+        D[State Interface]
+    end
+
+    subgraph "Hardware (Muscle)"
+        E[Mock Hardware Plugin]
+    end
+
+    subgraph "Visualization"
+        F[Joint State Broadcaster]
+        G[RViz2]
+    end
+
+    %% Flow of Commands
+    A -->|Goal Position| B
+    B --> C
+    C -->|Set Angle| E
+
+    %% Flow of Feedback
+    E -->|Current Angle| D
+    D --> F
+    F -->|/joint_states| G
+    D -.->|Feedback| B
+
+```
+
+### Launch sequence
+
+```mermaid
+graph TD
+    A[Launch File] --> B[Robot State Publisher]
+    A --> C[Controller Manager Node]
+    C -->|Reads| D[URDF + YAML]
+    A --> E[Spawn: joint_state_broadcaster]
+    A --> F[Spawn: arm_controller]
+
+    E -->|Success| G[RViz shows Robot]
+    F -->|Success| H[Ready for Commands]
+```

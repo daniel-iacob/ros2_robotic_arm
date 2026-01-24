@@ -34,7 +34,9 @@
   <joint name="joint_2" type="revolute">
     <parent link="link_1"/>
     <child link="link_2"/>
-    <origin xyz="0 0 0.4" rpy="0 0 0"/> <axis xyz="0 1 0"/>               <limit lower="-1.57" upper="1.57" effort="10.0" velocity="1.0"/>
+    <origin xyz="0 0 0.4" rpy="0 0 0"/> 
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.57" upper="1.57" effort="10.0" velocity="1.0"/>
   </joint>
 
   <link name="link_2">
@@ -48,5 +50,23 @@
       </material>
     </visual>
   </link>
+
+  <ros2_control name="RoboticArmHardware" type="system">
+    <hardware>
+      <plugin>mock_components/GenericSystem</plugin>
+    </hardware>
+    <joint name="joint_1">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="joint_2">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+  </ros2_control>
 
 </robot>
