@@ -41,12 +41,11 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 # source ros2 so that its available automatically in every opened terminal
 RUN echo "source /opt/ros/jazzy/setup.bash" >> /root/.bashrc
 
-
 # Build the custom packages
-RUN colcon build --packages-select robotic_arm_description
+RUN colcon build --symlink-install
 
 # For custom packages
-# RUN echo "source /ros2_robotic_arm/install/setup.bash" >> ~/.bashrc
+RUN echo "source /ros2_robotic_arm/install/setup.bash" >> ~/.bashrc
 
 # When the container is started, open a bash terminal
 # This terminal gives access to the container with ROS 2 environment installed
