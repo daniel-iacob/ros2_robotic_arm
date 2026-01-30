@@ -11,7 +11,7 @@ It runs inside a Docker container so that the environment can be isolated.
 ## Instalation
 The only tool that has to be manually installed is Docker.
 
-Install docker: https://docs.docker.com/desktop/setup/install/linux/ubuntu/
+Install docker: https://docs.docker.com/engine/install/ubuntu/
 
 All the other dependencies are automatically installed
 
