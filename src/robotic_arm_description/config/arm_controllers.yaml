@@ -1,11 +1,9 @@
 controller_manager:
   ros__parameters:
     update_rate: 100
-
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
-
-    arm_controller:
+    arm_controller: 
       type: joint_trajectory_controller/JointTrajectoryController
 
 arm_controller:
@@ -13,8 +11,9 @@ arm_controller:
     joints:
       - joint_1
       - joint_2
-      - joint_3  # <--- Add this line
+      - joint_3
     command_interfaces:
       - position
     state_interfaces:
       - position
+      - velocity
