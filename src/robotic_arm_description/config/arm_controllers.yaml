@@ -13,6 +13,7 @@ arm_controller:
     joints:
       - joint_1
       - joint_2
+      - joint_3  # <--- Add this line
     command_interfaces:
       - position
     state_interfaces:
