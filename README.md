@@ -64,34 +64,7 @@ This command gives permission to the applications from the container to show the
 - ros2 run tf2_tools view_frames
 - rm -rf build/ install/ log/
 
-## Workflow
-<details>
-<summary><b>Workflow Diagram</b></summary>
+## Extra documentation
+- [Developement workflow](./doc/dev_workflow.md)
 
-```mermaid
-
-graph TD
-    subgraph "1. Environment Setup"
-        A[Open Project in VS Code] --> B[Host runs: xhost +local:root]
-        B --> C[Build Docker Container]
-        C --> D[rosdep install dependencies]
-    end
-
-    subgraph "2. Development & Build"
-        D --> E[Develop Python/C++ Nodes & URDF]
-        E --> F[colcon build --symlink-install]
-        F --> G[source install/setup.bash]
-    end
-
-    subgraph "3. Execution & GUI"
-        G --> H[ros2 launch robotic_arm_description]
-        H --> I[RViz2 & Joint State GUI Pops Up]
-        I --> J[Control Real/Simulated Hardware]
-    end
-
-    subgraph "4. Cleanup"
-        J --> K[Close VS Code]
-        K --> L[Host runs: xhost -local:root]
-    end
-```
-</details>
+- [ROS Flowchart](./doc/ros_flowchart.md)
