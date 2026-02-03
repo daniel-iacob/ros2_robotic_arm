@@ -35,11 +35,10 @@
       <geometry><cylinder length="0.1" radius="0.08"/></geometry>
       <material name="orange"/>
     </visual>
-    <visual>
-      <origin xyz="0 0 0.1" rpy="${pi/2} 0 0"/>
-      <geometry><cylinder length="0.15" radius="0.06"/></geometry>
-      <material name="dark_grey"/>
-    </visual>
+    <collision>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry><cylinder length="0.1" radius="0.08"/></geometry>
+    </collision>
   </link>
 
   <joint name="joint_2" type="revolute">
@@ -56,11 +55,10 @@
       <geometry><box size="0.06 0.06 0.4"/></geometry>
       <material name="silver"/>
     </visual>
-    <visual>
-      <origin xyz="0 0 0.4" rpy="${pi/2} 0 0"/>
-      <geometry><cylinder length="0.1" radius="0.05"/></geometry>
-      <material name="dark_grey"/>
-    </visual>
+    <collision>
+      <origin xyz="0 0 0.2" rpy="0 0 0"/>
+      <geometry><box size="0.06 0.06 0.4"/></geometry>
+    </collision>
   </link>
 
   <joint name="joint_3" type="revolute">
@@ -77,6 +75,10 @@
       <geometry><cylinder length="0.3" radius="0.03"/></geometry>
       <material name="orange"/>
     </visual>
+    <collision>
+      <origin xyz="0 0 0.15" rpy="0 0 0"/>
+      <geometry><cylinder length="0.3" radius="0.03"/></geometry>
+    </collision>
   </link>
 
   <ros2_control name="RoboticArmHardware" type="system">
