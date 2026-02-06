@@ -44,8 +44,8 @@ case "$1" in
         ;;
     sim)
         echo -e "${BLUE}Starting Simulation...${NC}"
-        source /ros2_robotic_arm/install/setup.bash
-r       ros2 launch robotic_arm_bringup arm_system.launch.py
+        source install/setup.bash
+        ros2 launch robotic_arm_bringup arm_system.launch.py
         ;;
     *)
         echo -e "${YELLOW}Invalid option: $1${NC}"
