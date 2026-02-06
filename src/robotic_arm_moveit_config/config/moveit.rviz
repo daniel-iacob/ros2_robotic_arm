@@ -78,6 +78,25 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
+          grasp_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          gripper_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          left_finger:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_finger:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
           shoulder_link:
             Alpha: 1
             Show Axes: false
@@ -148,6 +167,25 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
+          grasp_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          gripper_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          left_finger:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_finger:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
           shoulder_link:
             Alpha: 1
             Show Axes: false
@@ -198,6 +236,25 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
+          grasp_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          gripper_base:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          left_finger:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_finger:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
           shoulder_link:
             Alpha: 1
             Show Axes: false
@@ -234,7 +291,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 4.609655380249023
+      Distance: 2.242159366607666
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -249,10 +306,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.3649999797344208
+      Pitch: -0.03500010445713997
       Target Frame: base_link
       Value: Orbit (rviz_default_plugins)
-      Yaw: 5.5201802253723145
+      Yaw: 5.22017765045166
     Saved: ~
 Window Geometry:
   Displays:
