@@ -1,8 +1,13 @@
 controller_manager:
   ros__parameters:
     update_rate: 100
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
     arm_controller:
       type: joint_trajectory_controller/JointTrajectoryController
+
     gripper_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
@@ -16,12 +21,14 @@ arm_controller:
       - position
     state_interfaces:
       - position
+      - velocity 
 
 gripper_controller:
   ros__parameters:
     joints:
-      - left_finger_joint # left and right are mimic joints
+      - left_finger_joint
     command_interfaces:
       - position
     state_interfaces:
       - position
+      - velocity
