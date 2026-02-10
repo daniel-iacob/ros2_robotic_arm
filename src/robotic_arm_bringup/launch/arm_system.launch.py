@@ -8,16 +8,20 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    # Paths to other packages
-    pkg_description = get_package_share_directory("robotic_arm_description")
-    pkg_controller = get_package_share_directory("robotic_arm_controller")
+    # 1. Capture the package paths
+    pkg_moveit_config = get_package_share_directory("robotic_arm_moveit_config")
 
-    # 1. The "Hardware/Simulation" Layer
-    simulation = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(pkg_description, "launch", "view_arm.launch.py"))
+    # 2. Include the MoveIt "demo" launch
+    moveit_demo = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(pkg_moveit_config, "launch", "demo.launch.py"))
     )
 
-    # 2. The "Intelligence" Layer
-    moving_logic = Node(package="robotic_arm_controller", executable="arm_mover", output="screen")
+    # 3. Define the Scene Manager Node
+    scene_manager_node = Node(
+        package="robotic_arm_bringup",
+        executable="scene_manager",
+        name="scene_manager",
+        output="screen",
+    )
 
-    return LaunchDescription([simulation, moving_logic])
+    return LaunchDescription([moveit_demo, scene_manager_node])

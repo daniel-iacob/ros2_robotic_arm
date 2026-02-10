@@ -4,3 +4,5 @@ initial_positions:
   joint_1: 0
   joint_2: 0
   joint_3: 0
+  left_finger_joint: 0
+  right_finger_joint: 0
