@@ -15,5 +15,6 @@
         }
     },
     "ruff.nativeServer": true,
-    "ROS2.distro": "jazzy"
+    "ROS2.distro": "jazzy",
+    "cmake.sourceDirectory": "/ros2_robotic_arm/src/robotic_arm_description"
 }
