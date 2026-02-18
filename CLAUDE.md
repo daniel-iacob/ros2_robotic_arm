@@ -128,3 +128,39 @@ ros2 run robotic_arm_bringup move_to_cube --home
 - **Phase 3** (Planned): ROS2 action server for async control
 - **Phase 4** (Planned): Camera integration for dynamic object detection
 - **Phase 5** (Planned): LLM interface for natural language control
+
+---
+
+## Latest Session Changes (2026-02-18)
+
+### Summary of Fixes
+- **Fixed CONTROL_FAILED error**: Replaced analytical IK with MoveIt's PositionConstraint approach (MoveIt handles IK internally via KDL `position_only_ik`)
+- **Fixed controller initialization**: Explicitly added ros2_control controller_manager node to launch file with proper config path
+- **Fixed YAML constraints syntax**: Changed per-joint constraint format to flat structure (`goal: position: 0.05` instead of nested `joint_1: goal: 0.05`)
+- **Fixed mimic joint error**: Removed `right_finger_joint` from `moveit_controllers.yaml` (mimic joints cannot have command interfaces)
+- **Added comprehensive debug logging**: Trajectory waypoints, execution status, and MoveIt error codes with human-readable descriptions for easier troubleshooting
+
+### Key Files Modified
+- `src/robotic_arm_bringup/launch/arm_system.launch.py` - Added explicit controller_manager node
+- `src/robotic_arm_moveit_config/config/ros2_controllers.yaml` - Fixed constraint syntax, added tolerances
+- `src/robotic_arm_moveit_config/config/moveit_controllers.yaml` - Removed right_finger_joint (mimic)
+- `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py` - Replaced analytical IK with PositionConstraint, added detailed logging
+
+---
+
+## Session Changes (2026-02-18, Continuation)
+
+### Summary of Fixes
+- **Fixed ros2_control crash**: The real culprit was `robotic_arm.ros2_control.xacro` in MoveIt config — it gave `right_finger_joint` a `command_interface`, conflicting with the URDF `<mimic>` tag. Removed command_interface, kept only state_interface.
+- **Removed duplicate controller_manager**: `arm_system.launch.py` was starting an explicit `ros2_control_node` AND `demo.launch.py` started another. Removed the duplicate — demo.launch.py handles it.
+- **Fixed moveit_controllers.yaml indentation**: `gripper_controller` was not indented under `moveit_simple_controller_manager`, causing "No action namespace" error.
+- **Motion now works**: `ros2 run robotic_arm_bringup move_to_cube --cube blue` successfully plans and executes (163 waypoints, ~16s trajectory).
+
+### Key Constraint Learned
+- In ROS2 Jazzy, `<param name="mimic">` inside `<ros2_control>` tags is **deprecated** — mimic info is read from the standard URDF `<mimic>` tag only. Mimic joints cannot have command interfaces.
+
+### Key Files Modified
+- `src/robotic_arm_moveit_config/config/robotic_arm.ros2_control.xacro` - Removed command_interface from right_finger_joint (the actual root cause)
+- `src/robotic_arm_moveit_config/config/moveit_controllers.yaml` - Fixed gripper_controller indentation
+- `src/robotic_arm_bringup/launch/arm_system.launch.py` - Removed duplicate controller_manager node
+- `src/robotic_arm_description/urdf/robotic_arm.urdf.xacro` - right_finger_joint: state_interface only in ros2_control section

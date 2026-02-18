@@ -51,6 +51,9 @@ class SimpleMoveArm:
 
         self.logger.info("Connected to move_group action server")
 
+        # Log diagnostics
+        self._log_diagnostics()
+
         # Publisher for planning scene updates
         self.scene_publisher = node.create_publisher(PlanningScene, "/planning_scene", 10)
 
@@ -62,6 +65,42 @@ class SimpleMoveArm:
         self.planning_time = 5.0  # seconds
         self.max_velocity_scaling = 0.1
         self.max_acceleration_scaling = 0.1
+
+    def _log_diagnostics(self):
+        """Log diagnostic info about system state at startup."""
+        import subprocess
+
+        self.logger.info("=== DIAGNOSTIC INFO ===")
+
+        # Check if controllers are loaded
+        try:
+            result = subprocess.run(
+                ["ros2", "control", "list_controllers"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                self.logger.info("Active controllers:\n" + result.stdout)
+            else:
+                self.logger.warn(
+                    f"Could not list controllers: {result.stderr}"
+                )
+        except Exception as e:
+            self.logger.warn(f"Failed to check controllers: {e}")
+
+        # Check controller config
+        try:
+            result = subprocess.run(
+                ["cat", "/proc/self/cwd/../../../src/robotic_arm_moveit_config/config/ros2_controllers.yaml"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+        except Exception:
+            pass
+
+        self.logger.info("=== END DIAGNOSTICS ===")
 
     def move_to_cube(self, cube_name: str, offset_z: float = 0.1, grasp: bool = False) -> bool:
         """
@@ -183,11 +222,10 @@ class SimpleMoveArm:
         code = result.error_code.val
         code_str = self._ERROR_CODES.get(code, f"UNKNOWN({code})")
 
-        # Log planning time if available
+        # Log planning details
         if hasattr(result, "planning_time"):
             self.logger.info(f"Planning time: {result.planning_time:.3f}s")
 
-        # Log trajectory waypoint count if a plan was made
         if hasattr(result, "planned_trajectory"):
             traj = result.planned_trajectory.joint_trajectory
             n_points = len(traj.points)
@@ -197,11 +235,35 @@ class SimpleMoveArm:
                     f"joints: {traj.joint_names}"
                 )
 
+                # Log first and last waypoint details
+                first = traj.points[0]
+                last = traj.points[-1]
+                self.logger.info(
+                    f"  START: positions={[f'{p:.4f}' for p in first.positions]} "
+                    f"time_from_start={first.time_from_start.sec}s"
+                )
+                self.logger.info(
+                    f"  END:   positions={[f'{p:.4f}' for p in last.positions]} "
+                    f"time_from_start={last.time_from_start.sec}s"
+                )
+
+                # Log execution status
+                if hasattr(result, "executed_trajectory"):
+                    exec_traj = result.executed_trajectory.joint_trajectory
+                    exec_points = len(exec_traj.points)
+                    self.logger.info(
+                        f"Executed: {exec_points} waypoints "
+                        f"(planned {n_points}, executed {exec_points})"
+                    )
+
         if code == 1:  # SUCCESS
             self.logger.info("Motion completed successfully")
             return True
         else:
-            self.logger.error(f"Motion failed: {code_str}")
+            self.logger.error(f"Motion failed with error: {code_str}")
+            # Log additional error details if available
+            if hasattr(result, "status") and result.status:
+                self.logger.error(f"  Status: {result.status}")
             return False
 
     def _move_to_joints(self, joint_positions: list) -> bool:

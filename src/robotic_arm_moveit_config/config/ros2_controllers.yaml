@@ -21,7 +21,12 @@ arm_controller:
       - position
     state_interfaces:
       - position
-    open_loop_control: true
+    allow_nonzero_velocity_at_trajectory_end: true
+    constraints:
+      goal_time: 0.0
+      stopped_velocity_tolerance: 0.1
+      goal:
+        position: 0.05
 
 gripper_controller:
   ros__parameters:
@@ -31,4 +36,9 @@ gripper_controller:
       - position
     state_interfaces:
       - position
-      - velocity
+    allow_nonzero_velocity_at_trajectory_end: true
+    constraints:
+      goal_time: 0.0
+      stopped_velocity_tolerance: 0.05
+      goal:
+        position: 0.001
