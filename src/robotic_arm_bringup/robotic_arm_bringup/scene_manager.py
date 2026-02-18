@@ -13,9 +13,10 @@ class SceneManager(Node):
         super().__init__("scene_manager")
         # We must use /planning_scene to send colors
         self.pub = self.create_publisher(PlanningScene, "/planning_scene", 10)
-        time.sleep(2.0)
-        self.spawn_blue_cube()
-        self.spawn_red_cube()
+
+        # Wait longer for MoveIt to be ready (increased from 2 to 5 seconds)
+        self.get_logger().info("Waiting for MoveIt to initialize...")
+        time.sleep(5.0)
 
     def spawn_blue_cube(self):
         # 1. Define the Cube
@@ -28,9 +29,9 @@ class SceneManager(Node):
         primitive.dimensions = [0.05, 0.05, 0.05]
 
         pose = Pose()
-        pose.position.x = 0.4
+        pose.position.x = 0.5
         pose.position.y = 0.0
-        pose.position.z = 0.025  # Half of the 0.05 height to sit on the floor
+        pose.position.z = 0.3
         pose.orientation.w = 1.0
 
         cube.primitives.append(primitive)
@@ -64,8 +65,8 @@ class SceneManager(Node):
 
         pose = Pose()
         pose.position.x = 0.0
-        pose.position.y = 0.4
-        pose.position.z = 0.025  # Half of the 0.05 height to sit on the floor
+        pose.position.y = 0.5
+        pose.position.z = 0.3
         pose.orientation.w = 1.0
 
         cube.primitives.append(primitive)
@@ -91,8 +92,15 @@ class SceneManager(Node):
 def main():
     rclpy.init()
     node = SceneManager()
-    # Spin briefly to ensure the message is sent
-    rclpy.spin_once(node, timeout_sec=1.0)
+
+    # Publish multiple times to ensure MoveIt receives them
+    node.get_logger().info("Publishing cubes to planning scene...")
+    for i in range(3):
+        node.spawn_blue_cube()
+        node.spawn_red_cube()
+        time.sleep(0.5)
+
+    node.get_logger().info("Scene setup complete!")
     rclpy.shutdown()
 
 

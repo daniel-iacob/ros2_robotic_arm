@@ -31,6 +31,7 @@ setup(
     entry_points={
         "console_scripts": [
             "scene_manager = robotic_arm_bringup.scene_manager:main",
+            "move_to_cube = robotic_arm_bringup.move_to_cube:main",
         ],
     },
 )
