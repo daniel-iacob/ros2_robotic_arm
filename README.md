@@ -40,7 +40,8 @@ There are two ways to start the container:
 
 After the container is started
 ```bash
-./start_simulation.sh
+./run build
+./run sim
 ```
 
 ## Important
@@ -55,8 +56,8 @@ This command gives permission to the applications from the container to show the
 ## Status
 - Install everything from scripts (configuration as code)
 - Run inside docker container
-- Robot description
-- Move robot from script (inside controller package)
+- Robot description + gripper
+- moveit config
 
 ## Useful ROS2 commands
 - ros2 node list

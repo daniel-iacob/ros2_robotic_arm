@@ -11,7 +11,11 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - /tmp/.docker.xauth:/tmp/.docker.xauth:rw
       - .:/ros2_robotic_arm  # Make sure you add this to see your code!
+      - claude-data:/root/.claude  # Persist Claude chat history and data
     devices:
       - /dev/dri:/dev/dri
     stdin_open: true
     tty: true
+
+volumes:
+  claude-data:

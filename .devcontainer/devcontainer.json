@@ -41,7 +41,8 @@
                 "ms-vscode.cmake-tools",
                 "charliermarsh.ruff",
                 "tamasfe.even-better-toml",
-                "bierner.markdown-mermaid"
+                "bierner.markdown-mermaid",
+                "anthropic.claude-code",
             ]
         }
     }
