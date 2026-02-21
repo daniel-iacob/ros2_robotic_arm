@@ -5,6 +5,15 @@ Learn ROS2 concepts with a simulated robotic arm + gripper + camera → eventual
 
 **Timeline**: Simulation-only for next 6+ months
 
+## Instructions for Claude
+**Always update this file** when you:
+- Make significant changes to the codebase (update Key Files, Current State, architecture sections)
+- Make an architectural or design decision — document the chosen approach, the alternatives considered, and why this one was selected
+- Fix a non-obvious bug — document the root cause and the lesson learned
+- Discover a constraint or ROS2/MoveIt quirk that affects how things must be done
+
+Keep the **Latest Session Changes** section current: add a new dated entry at the top for each session with meaningful changes, summarizing what was done and why.
+
 ## Quick Start
 ```bash
 ./run.sh sim    # Launch RViz + MoveIt
@@ -164,3 +173,27 @@ ros2 run robotic_arm_bringup move_to_cube --home
 - `src/robotic_arm_moveit_config/config/moveit_controllers.yaml` - Fixed gripper_controller indentation
 - `src/robotic_arm_bringup/launch/arm_system.launch.py` - Removed duplicate controller_manager node
 - `src/robotic_arm_description/urdf/robotic_arm.urdf.xacro` - right_finger_joint: state_interface only in ros2_control section
+
+---
+
+## Session Changes (2026-02-21)
+
+### Root Cause of Motion Timeout Bug
+First move (home → blue) worked, but subsequent moves (blue → red) timed out. **Root cause**: MoveIt planning was using stale start state (always assuming home position) instead of the current arm position.
+
+**Why it failed**: When `is_diff = True` in planning options without setting an explicit `start_state`, MoveIt defaults to assuming the robot is at home (0,0,0). Works fine for the first move, but after moving to blue cube, the next plan thinks the arm is still at home — planning invalid trajectories that violate constraints during execution.
+
+### Solution
+Added joint state subscription to track the arm's actual current position, then pass it as `start_state` in every MoveGroup goal:
+1. Subscribe to `/joint_states` topic with callback to capture current state
+2. Implement `_get_current_robot_state()` method that builds a RobotState from latest feedback
+3. Set `goal_msg.request.start_state = self._get_current_robot_state()` in all three motion methods: `_move_to_position()`, `_move_to_joints()`, `_move_gripper()`
+
+**Why this works**: Now MoveIt always knows the true starting position before planning, generating valid trajectories from wherever the arm actually is.
+
+### Key Files Modified
+- `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py` - Added joint state tracking, `_get_current_robot_state()` method, set current state in all motion planning calls
+- `CLAUDE.md` - Added "Instructions for Claude" section to maintain this file as a living document
+
+### Key Constraint Learned
+- **MoveIt2 planning state assumption**: When using `is_diff = True` without explicit `start_state`, MoveIt assumes home position. Always set `start_state` for every plan to ensure planning reflects the robot's actual current pose.

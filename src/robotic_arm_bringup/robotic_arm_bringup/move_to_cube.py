@@ -20,10 +20,13 @@ from moveit_msgs.msg import (
     JointConstraint,
     PlanningScene,
     PositionConstraint,
+    RobotState,
 )
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from sensor_msgs.msg import JointState
 from shape_msgs.msg import SolidPrimitive
+import threading
 
 
 class SimpleMoveArm:
@@ -57,6 +60,13 @@ class SimpleMoveArm:
         # Publisher for planning scene updates
         self.scene_publisher = node.create_publisher(PlanningScene, "/planning_scene", 10)
 
+        # Subscriber for joint state feedback
+        self.joint_state_lock = threading.Lock()
+        self.current_joint_state = None
+        self.joint_state_sub = node.create_subscription(
+            JointState, "/joint_states", self._joint_state_callback, 10
+        )
+
         # Cube positions (tracked dynamically)
         # Format: (x, y, z) in base_link frame
         self.cubes = {"blue": (0.5, 0.0, 0.3), "red": (0.0, 0.5, 0.3)}
@@ -65,6 +75,37 @@ class SimpleMoveArm:
         self.planning_time = 5.0  # seconds
         self.max_velocity_scaling = 0.1
         self.max_acceleration_scaling = 0.1
+
+    def _joint_state_callback(self, msg: JointState):
+        """Store the latest joint state for planning."""
+        with self.joint_state_lock:
+            self.current_joint_state = msg
+
+    def _get_current_robot_state(self) -> RobotState:
+        """
+        Get the current robot state from joint state feedback.
+
+        Returns:
+            RobotState with current joint positions
+        """
+        with self.joint_state_lock:
+            if self.current_joint_state is None:
+                # Return zero state if no feedback yet
+                state = RobotState()
+                state.joint_state.name = ["joint_1", "joint_2", "joint_3", "left_finger_joint"]
+                state.joint_state.position = [0.0, 0.0, 0.0, 0.0]
+                return state
+
+            # Build RobotState from current joint state
+            state = RobotState()
+            state.joint_state = JointState(
+                header=self.current_joint_state.header,
+                name=self.current_joint_state.name,
+                position=list(self.current_joint_state.position),
+                velocity=list(self.current_joint_state.velocity) if self.current_joint_state.velocity else [],
+                effort=list(self.current_joint_state.effort) if self.current_joint_state.effort else [],
+            )
+            return state
 
     def _log_diagnostics(self):
         """Log diagnostic info about system state at startup."""
@@ -283,6 +324,9 @@ class SimpleMoveArm:
         goal_msg.request.max_velocity_scaling_factor = self.max_velocity_scaling
         goal_msg.request.max_acceleration_scaling_factor = self.max_acceleration_scaling
 
+        # Set current state as the starting point for planning
+        goal_msg.request.start_state = self._get_current_robot_state()
+
         goal_constraints = Constraints()
         for joint_name, position in joint_positions:
             jc = JointConstraint()
@@ -330,6 +374,9 @@ class SimpleMoveArm:
         goal_msg.request.allowed_planning_time = self.planning_time
         goal_msg.request.max_velocity_scaling_factor = self.max_velocity_scaling
         goal_msg.request.max_acceleration_scaling_factor = self.max_acceleration_scaling
+
+        # Set current state as the starting point for planning
+        goal_msg.request.start_state = self._get_current_robot_state()
 
         # Create position constraint - let MoveIt solve IK
         pc = PositionConstraint()
@@ -416,6 +463,9 @@ class SimpleMoveArm:
         goal_msg.request.allowed_planning_time = 2.0
         goal_msg.request.max_velocity_scaling_factor = 0.1
         goal_msg.request.max_acceleration_scaling_factor = 0.1
+
+        # Set current state as the starting point for planning
+        goal_msg.request.start_state = self._get_current_robot_state()
 
         # Create joint constraint
         joint_constraint = JointConstraint()
