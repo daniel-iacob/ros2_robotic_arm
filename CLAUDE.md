@@ -14,6 +14,53 @@ Learn ROS2 concepts with a simulated robotic arm + gripper + camera → eventual
 
 Keep the **Latest Session Changes** section current: add a new dated entry at the top for each session with meaningful changes, summarizing what was done and why.
 
+**Also read and update [`doc/architecture.md`](doc/architecture.md)** when you:
+- Add or remove ROS2 nodes, topics, or actions
+- Make a significant architectural or design decision
+- Change the phase roadmap
+- Discover a new MoveIt/ROS2 constraint
+
+---
+
+## Quick Reference for Claude
+
+> Read this first. It gives you enough context to start working without parsing the whole file.
+
+**What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Goal: eventually LLM-controlled manipulation. Currently Phase 1 — CLI-driven pick-and-place with MoveIt2 mock hardware. No Gazebo, no camera, no LLM yet.
+
+**Running nodes** (after `./run.sh sim`):
+- `scene_manager` — one-shot startup node, adds blue/red cube collision objects to MoveIt
+- `move_group` — MoveIt2 planning server, action server at `/move_action`
+- `arm_controller` / `gripper_controller` / `joint_state_broadcaster` — ros2_control layer
+- `robot_state_publisher` — TF broadcaster
+- `rviz2` — visualization
+
+**Entry point for motion**: `ros2 run robotic_arm_bringup move_to_cube [--cube/--place/--home/--open/--close/--detach]`
+**Primary file**: `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py`
+
+**Critical constraints — always remember these**:
+
+| Constraint | What breaks if ignored |
+|------------|------------------------|
+| Always set `start_state` on every MoveGroup plan | Second+ moves plan from home (0,0,0) → wrong trajectories |
+| `AttachedCollisionObject` persists across CLI calls | Cube stays glued to arm across commands; `--home` drags it home |
+| Detach cube before every `return False` in `place_cube_at()` | Cube stays attached after failed place; subsequent moves carry it |
+| Lift arm BEFORE re-adding cube to world scene | START_STATE_IN_COLLISION on lift (start state check ≠ path check) |
+| Attach cube with `touch_links` BEFORE `close_gripper()` | Gripper close returns error 99999 (per-plan ACM doesn't work for gripper group) |
+| Mimic joints: no command interface in ros2_control | ros2_control crash on startup |
+
+**Key files by task**:
+- Robot model / joints: `src/robotic_arm_description/urdf/robotic_arm.urdf.xacro`
+- Motion control logic: `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py`
+- Scene initialization: `src/robotic_arm_bringup/robotic_arm_bringup/scene_manager.py`
+- MoveIt planning groups / named states: `src/robotic_arm_moveit_config/config/robotic_arm.srdf`
+- Controller config: `src/robotic_arm_moveit_config/config/moveit_controllers.yaml`
+- Launch entry point: `src/robotic_arm_bringup/launch/arm_system.launch.py`
+
+**Full node diagrams and design decisions**: see [`doc/architecture.md`](doc/architecture.md)
+
+---
+
 ## Quick Start
 ```bash
 ./run.sh sim    # Launch RViz + MoveIt
@@ -63,7 +110,11 @@ ros2 run robotic_arm_bringup move_to_cube --cube red
 ros2 run robotic_arm_bringup move_to_cube --cube blue --grasp
 
 # Pick and place - move blue cube to new position
-ros2 run robotic_arm_bringup move_to_cube --place blue --target-x 0.2 --target-y 0.3
+# Valid targets: keep sqrt(x²+y²) between ~0.3-0.5m, avoid Z<0.3 at off-axis XY (auto-retries)
+ros2 run robotic_arm_bringup move_to_cube --place blue --target-x 0.4 --target-y 0.1
+ros2 run robotic_arm_bringup move_to_cube --place blue --target-x 0.35 --target-y 0.2
+ros2 run robotic_arm_bringup move_to_cube --place blue --target-x 0.1 --target-y 0.4  # near red cube
+# Note: (0.2, 0.3) is at workspace limit — arm can only reach Z≈0.4 there (warns but succeeds)
 
 # Gripper control
 ros2 run robotic_arm_bringup move_to_cube --open   # Open gripper
@@ -71,6 +122,10 @@ ros2 run robotic_arm_bringup move_to_cube --close  # Close gripper
 
 # Return home
 ros2 run robotic_arm_bringup move_to_cube --home
+
+# Recovery: detach cube if it got stuck attached to gripper
+ros2 run robotic_arm_bringup move_to_cube --detach blue
+ros2 run robotic_arm_bringup move_to_cube --detach red
 ```
 
 **Implementation**: CLI script using MoveGroup action client (`/move_action`) — sends `PositionConstraint` goals, MoveIt handles IK via KDL
@@ -140,6 +195,62 @@ ros2 run robotic_arm_bringup move_to_cube --home
 
 ---
 
+## Latest Session Changes (2026-02-21, Continuation 5)
+
+### Bug: Cube stays attached to gripper when --place fails mid-sequence
+
+**Root cause**: `place_cube_at()` attaches the cube at step 1 (inside `move_to_cube(grasp=True)`). If steps 2, 3, or 4 fail, the function returns `False` without calling `_detach_cube_from_gripper()`. The `AttachedCollisionObject` persists in the MoveIt server across command invocations. Any subsequent command (including `--home`) moves the arm and the cube follows it — because it's still attached.
+
+**Fix**: Added `_detach_cube_from_gripper(cube_name)` + `open_gripper()` cleanup before every early `return False` in `place_cube_at()` after step 1 (steps 2, 3, and the step 4 all-retries-exhausted path).
+
+**Recovery tool**: Added `--detach <cube>` CLI command. Detaches the named cube from the gripper, opens the gripper, and re-adds the cube to the world scene at its last tracked position. Use this when the cube gets stuck attached without restarting the sim:
+```bash
+ros2 run robotic_arm_bringup move_to_cube --detach blue
+```
+
+**Rebuild required**: `colcon build --packages-select robotic_arm_bringup --symlink-install`
+
+### Key Constraint Learned
+- **`AttachedCollisionObject` persists across CLI invocations** — it lives in the MoveIt server, not in Python memory. Any early exit that doesn't call `_detach_cube_from_gripper()` leaves the cube attached for all future commands in the same MoveIt session.
+
+### Key Files Modified
+- `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py`:
+  - `place_cube_at()` steps 2, 3, 4: added detach+open_gripper cleanup before each `return False`
+  - Added `--detach <cube>` CLI option for manual recovery
+
+---
+
+## Latest Session Changes (2026-02-21, Continuation 4)
+
+### Gripper close and pick-and-place fixes
+
+**Bug: Gripper close error 99999 even with per-plan ACM**
+The `planning_options.planning_scene_diff` ACM approach worked for arm motion (cube stayed visible) but did NOT work for the gripper group — MoveIt still detected finger-cube collision and returned 99999.
+
+**Root cause**: `planning_options.planning_scene_diff` ACM isn't applied consistently across all planning groups; gripper group planning ignored the ACM diff.
+
+**Fix**: Attach cube to gripper (`AttachedCollisionObject`) BEFORE calling `close_gripper()`, not after. When the cube is attached with `touch_links = ["left_finger", "right_finger", ...]`, MoveIt allows those links to contact the attached object — so the gripper close succeeds without any ACM needed.
+
+**Bug: START_STATE_IN_COLLISION on step 7 lift-away**
+After placing the cube at its target Z and re-adding it to the planning scene, the arm's start position is at the same Z as the cube center. MoveIt rejected the lift-away plan due to start state collision.
+
+**Fix**: Pass `allowed_object=f"{cube_name}_piece"` to the step 7 `_move_to_position()` call so the arm can plan away from the cube position.
+
+**Feature: Z fallback for workspace limits**
+`place_cube_at()` now retries at Z+0.05 increments (up to 3 attempts) if the requested Z is outside the arm's workspace at the target XY. The actual placed Z is used for `update_cube_position()`, with a warning logged.
+
+### Key Files Modified
+- `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py`:
+  - `move_to_cube()` grasp branch: `_attach_cube_to_gripper()` now called BEFORE `close_gripper()`
+  - `place_cube_at()` Step 4: retry loop with Z+0.05 increments on FAILURE
+  - `place_cube_at()` Step 6: `update_cube_position()` uses `placed_z` (actual) not `target_z`
+  - `place_cube_at()` Step 7: `allowed_object` passed to lift-away motion
+
+### Key Constraint Learned
+- **per-plan ACM via `planning_options.planning_scene_diff`**: Works for arm group but NOT reliably for gripper group. For gripper-cube collision suppression, use `AttachedCollisionObject` with `touch_links` instead.
+
+---
+
 ## Latest Session Changes (2026-02-18)
 
 ### Summary of Fixes
@@ -197,3 +308,86 @@ Added joint state subscription to track the arm's actual current position, then 
 
 ### Key Constraint Learned
 - **MoveIt2 planning state assumption**: When using `is_diff = True` without explicit `start_state`, MoveIt assumes home position. Always set `start_state` for every plan to ensure planning reflects the robot's actual current pose.
+
+---
+
+## Session Changes (2026-02-21, Continuation)
+
+### Root Cause of Gripper Close Failure (error 99999) During Pick-and-Place
+`--place` and `--cube --grasp` commands failed with gripper error 99999 (MoveIt general FAILURE) when trying to close the gripper at the grasp position.
+
+**Two-part root cause**:
+1. **Arm descent blocked**: The grasp step targets Z=0.3 (cube center). The cube collision object occupies Z=0.275→0.325. MoveIt may reject the arm path because the endpoint is inside the collision object.
+2. **Gripper close blocked**: Even if the arm reaches the position, `close_gripper()` plans finger motion while the cube is still a collision obstacle — fingers would intersect the cube mesh, so MoveIt returns 99999.
+
+### Solution
+Remove the cube from the planning scene before the arm descends into the cube's collision zone, so both the arm motion and gripper close can execute without interference. The cube is re-added at its new position after placing via `update_cube_position()`.
+
+Three approaches were considered:
+- **Remove cube before grasp (chosen)** — minimal code, clean semantics: cube "disappears" when grasped, re-appears at target when placed
+- **Allowed Collision Matrix** — more complex, harder to reset, affects all subsequent planning
+- **Attach cube to gripper** — most realistic physically, but requires full attach/detach lifecycle (future improvement)
+
+### Key Files Modified
+- `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py`:
+  - Added `_remove_cube_from_scene()` helper method
+  - Call it in `move_to_cube()` before the 2cm descent step (not just before gripper close)
+  - Changed `update_cube_position()` from `CollisionObject.MOVE` to `CollisionObject.ADD` so it re-adds the cube correctly after it was removed
+
+### Key Constraint Learned
+- **MoveIt2 collision objects block planning endpoints**: A collision object in the scene will block both arm motion that ends inside it AND gripper motion that would intersect it. Must remove collision objects from the scene before grasping them.
+
+---
+
+## Session Changes (2026-02-21, Continuation 2)
+
+### Bugs Fixed in pick-and-place flow
+
+**Bug: place_cube_at() default target_z=0.025 caused unreachable target**
+The `place_cube_at()` default was Z=0.025 (floor level), making the approach height 0.125m — well below the arm's workspace (cubes at Z=0.3). MoveIt returned FAILURE(general) for the target motion.
+- Fixed: default is now `None` → derived from the cube's current Z position at call time, keeping the cube on the same surface level
+- Also fixed: CLI `--target-z` default updated to `None` (was hardcoded 0.025)
+
+**Bug: First motion always planned from home (0,0,0)**
+The joint state subscriber was created after `_log_diagnostics()`, which runs a blocking subprocess (~3 seconds). During that blocking call, ROS callbacks can't fire, so `current_joint_state` is None when the first motion is planned. Result: if the arm was at a non-home position, the first plan was wrong.
+- Fixed: moved subscriber creation to before `_log_diagnostics()`, added `rclpy.spin_once(node, timeout_sec=0.5)` immediately after subscriber creation to ensure the initial joint state is captured
+
+**Visual artifact: cube disappears while arm animation still playing**
+Not a code bug — correct behavior. The cube is removed after the 10cm approach motion succeeds (before descending into collision zone). Mock hardware completes trajectory execution in real wall-clock time (~16s) matching the animation, so timing is correct. The user perception of "too early" is due to the arm already being above the cube when it disappears.
+
+### Key Files Modified
+- `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py`:
+  - `place_cube_at()`: default target_z changed from 0.025 to None (derives from cube's current Z)
+  - `__init__`: joint state subscriber moved before diagnostics, added `rclpy.spin_once()` for initial state capture
+  - CLI `--target-z`: default changed from 0.025 to None
+
+---
+
+## Session Changes (2026-02-21, Continuation 3)
+
+### Cube visibility during pick-and-place
+User wanted the cube to NEVER disappear from RViz. Previous approach removed the cube from the planning scene before grasping (making it invisible). New approach keeps the cube in the scene always.
+
+**Solution: per-plan ACM + AttachedCollisionObject for transport**
+- `_make_allowed_collision_diff(object_id)` — returns a `PlanningScene` diff with the cube marked as collision-passthrough via `AllowedCollisionMatrix.default_entry_names/values`. This diff is passed as `planning_options.planning_scene_diff` in specific plans that need to move through the cube's space. The world scene (and RViz) is unaffected.
+- `_move_to_position(allowed_object=...)` and `_move_gripper(allowed_object=...)` / `close_gripper(allowed_object=...)` — accept an optional object ID to ignore during that specific plan
+- `_attach_cube_to_gripper(cube_name)` — after gripper closes, attaches the cube to `grasp_link` via `AttachedCollisionObject` so it moves with the arm in RViz during transport. `touch_links = ["left_finger", "right_finger", "grasp_link", "gripper_base"]`
+- `_detach_cube_from_gripper(cube_name)` — before opening gripper, detaches the cube (leaves it at its world position)
+- `update_cube_position()` — re-adds the cube at the target position after detach+release
+
+**Workflow**:
+1. Approach (10cm above): normal collision checking — cube blocks unrelated paths
+2. Pre-grasp descent + grasp + gripper close: per-plan ACM ignores cube — cube stays visible
+3. After close: cube attached to gripper → moves with arm in RViz
+4. Lower to target: cube moves with arm
+5. Detach + open gripper + update scene: cube reappears at target position
+
+**Key constraint**: MoveIt's `planning_scene_diff.allowed_collision_matrix.default_entry_names/values` allows specific objects to be treated as collision-passthrough for a single planning request only, without modifying the global planning scene.
+
+### Key Files Modified
+- `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py`:
+  - Imports: added `AllowedCollisionMatrix`, `AttachedCollisionObject`
+  - Added `_make_allowed_collision_diff()`, `_attach_cube_to_gripper()`, `_detach_cube_from_gripper()` methods
+  - `_move_to_position()`, `_move_gripper()`, `close_gripper()`: added `allowed_object` parameter
+  - `move_to_cube()` grasp branch: replaced `_remove_cube_from_scene()` with per-plan ACM + attach after close
+  - `place_cube_at()`: added `_detach_cube_from_gripper()` before `open_gripper()`
