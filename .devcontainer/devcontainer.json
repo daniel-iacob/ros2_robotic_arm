@@ -43,6 +43,7 @@
                 "tamasfe.even-better-toml",
                 "bierner.markdown-mermaid",
                 "anthropic.claude-code",
+                "jebbs.plantuml",
             ]
         }
     }
