@@ -25,6 +25,7 @@ Keep the **Latest Session Changes** section current: add a new dated entry at th
 ## Quick Reference for Claude
 
 > Read this first. It gives you enough context to start working without parsing the whole file.
+> Also read **[`MEMORY.md`](MEMORY.md)** — compact accumulated patterns and constraints.
 
 **What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Goal: eventually LLM-controlled manipulation. Currently Phase 1 — CLI-driven pick-and-place with MoveIt2 mock hardware. No Gazebo, no camera, no LLM yet.
 
@@ -45,8 +46,12 @@ Keep the **Latest Session Changes** section current: add a new dated entry at th
 | Always set `start_state` on every MoveGroup plan | Second+ moves plan from home (0,0,0) → wrong trajectories |
 | `AttachedCollisionObject` persists across CLI calls | Cube stays glued to arm across commands; `--home` drags it home |
 | Detach cube before every `return False` in `place_cube_at()` | Cube stays attached after failed place; subsequent moves carry it |
-| Lift arm BEFORE re-adding cube to world scene | START_STATE_IN_COLLISION on lift (start state check ≠ path check) |
+| After `_detach_cube_from_gripper`, call `_remove_cube_from_scene` before open_gripper/move | MoveIt `decoupleObject()` re-adds cube to world at arm's position → START_STATE_IN_COLLISION (per-plan ACM unreliable for gripper group) |
+| `--home`: try `go_home()` first, remove cubes only on failure | Removing all cubes before go_home causes both cubes to disappear from RViz unnecessarily |
+| Always re-add cubes with `ObjectColor` after any scene removal | Cubes reappear as green (MoveIt default) instead of blue/red — `update_cube_position()` now handles this |
+| `_make_allowed_collision_diff` must set `robot_state.is_diff = True` | Empty robot_state with `is_diff=False` resets planning scene state → ACM ignored → START_STATE_IN_COLLISION |
 | Attach cube with `touch_links` BEFORE `close_gripper()` | Gripper close returns error 99999 (per-plan ACM doesn't work for gripper group) |
+| Use `/apply_planning_scene` service (not topic) for attach/detach | `time.sleep()` does NOT spin ROS2 executor; topic publishes aren't processed until next spin, creating a race with the next motion plan |
 | Mimic joints: no command interface in ros2_control | ros2_control crash on startup |
 
 **Key files by task**:
@@ -169,12 +174,12 @@ ros2 run robotic_arm_bringup move_to_cube --detach red
 - **Collision checking**: Enabled for non-adjacent links, cubes treated as obstacles
 
 ### Pick-and-Place Architecture
-- **Approach**: Direct planning scene updates (Approach 3)
+- **Approach**: Attach/detach + synchronous scene updates via `/apply_planning_scene` service
 - **Cube tracking**: Internal dictionary tracks current positions
-- **Scene updates**: Publishes `MOVE` operations to `/planning_scene` topic
-- **Sequence**: Grasp → Lift → Move → Lower → Release → Update scene
-- **Advantages**: Simple, works with mock hardware, no separate scene manager needed
-- **Future**: Can upgrade to attached collision objects when adding Gazebo physics
+- **Scene updates**: `_apply_scene_sync()` — service call with topic fallback
+- **Sequence**: Approach → Descend (ACM) → Attach → Close gripper → Lift → Move → Lower → Detach → Remove from scene → Open gripper → Lift away → Re-add cube with color
+- **Post-detach pattern**: `_remove_cube_from_scene()` after every detach (decoupleObject re-adds cube at arm position)
+- **Colors**: `update_cube_position()` includes `ObjectColor` (blue/red) — MoveIt loses color on detach
 
 ### Controller Configuration
 - **arm_controller**: `open_loop_control: true` — required for mock hardware (bypasses state feedback checks)
@@ -192,6 +197,172 @@ ros2 run robotic_arm_bringup move_to_cube --detach red
 - **Phase 3** (Planned): ROS2 action server for async control
 - **Phase 4** (Planned): Camera integration for dynamic object detection
 - **Phase 5** (Planned): LLM interface for natural language control
+
+---
+
+## Latest Session Changes (2026-02-25)
+
+### Bug: per-plan ACM fails for post-detach open_gripper and move-up
+
+**Root cause (1)**: `_make_allowed_collision_diff()` was missing `robot_state.is_diff = True`.
+When MoveIt applies a planning scene diff with `robot_state.is_diff = False` and an empty
+robot state, it resets the planning scene's robot state — the ACM diff is effectively ignored.
+
+**Root cause (2)**: Per-plan ACM via `planning_scene_diff` is documented as unreliable for
+gripper group (see 2026-02-21 Cont. 4). After fixing `robot_state.is_diff`, gripper group
+still fails. The `allowed_object` approach is fundamentally unreliable for post-detach ops.
+
+**New approach — remove from scene after detach**:
+After every `_detach_cube_from_gripper()`, call `_remove_cube_from_scene()` to remove the
+cube that `decoupleObject()` re-added to the world. Then `open_gripper()` and lift proceed
+collision-free (no ACM needed). `update_cube_position()` re-adds the cube with correct color.
+
+### Bug: cubes reappear as green after re-adding
+
+**Root cause**: `update_cube_position()` published a `CollisionObject` without `ObjectColor`.
+MoveIt/RViz defaults to green when no color is set. The original blue/red colors were set by
+`scene_manager.py` at startup, but `decoupleObject()` and `CollisionObject.ADD` don't
+preserve the color association.
+
+**Fix**: `update_cube_position()` now includes `ObjectColor` (blue/red `ColorRGBA`) in the
+`PlanningScene` diff. Also switched from topic publish to `_apply_scene_sync()` for
+reliability.
+
+### Bug: both cubes disappear from RViz during `--home`
+
+**Root cause**: `--home` handler removed ALL world cubes before `go_home()`, even when the
+arm wasn't near any cube (normal case after successful place, arm is 10cm above).
+
+**Fix**: `--home` now tries `go_home()` first (no visual disruption). Only if it fails
+(arm stuck at cube position), removes world cubes and retries. Always re-adds cubes with
+correct colors at the end.
+
+**Fixes applied**:
+- `_make_allowed_collision_diff()`: added `robot_state.is_diff = True`
+- `place_cube_at()` steps 2/3/4 failure + step 5: `_remove_cube_from_scene()` after detach
+- `update_cube_position()`: includes `ObjectColor` + uses `_apply_scene_sync()`
+- `--home` handler: try-first, remove-on-failure, always re-add with colors
+- `--detach` handler: `_remove_cube_from_scene()` after detach
+
+**Key files modified**: `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py`
+
+**No rebuild required** — Python-only changes, symlink-install is in effect.
+
+---
+
+## Latest Session Changes (2026-02-24, continuation)
+
+### Bug: START_STATE_IN_COLLISION after detach in `place_cube_at` and `go_home`
+
+**Root cause**: MoveIt2's `decoupleObject()` behavior. When a detach (REMOVE on
+AttachedCollisionObject) is processed, MoveIt not only removes the cube from the attached
+objects list — it **immediately re-adds the cube as a world collision object at the arm's
+current world position**. Now that detach is synchronous (via service), the cube re-appears in
+the world *while the arm is still there* → arm start state is in collision with the cube →
+START_STATE_IN_COLLISION for any subsequent plan.
+
+Previously (with topic + sleep), the race meant the detach often wasn't processed until after
+the arm had already moved away, so this wasn't observed. The service fix exposed it.
+
+**Two affected scenarios**:
+1. `place_cube_at()` step 5–6: after detach, `open_gripper()` and the step 6 lift-away both
+   fail with START_STATE_IN_COLLISION because the cube just re-appeared at the arm's position.
+2. `--home` after a failed place: arm stuck at cube position; `_detach_all_cubes()` is a no-op
+   on world objects (only clears attached objects); `go_home()` fails with START_STATE_IN_COLLISION.
+
+**Fixes**:
+1. `open_gripper()` gains an `allowed_object` parameter (passed through to `_move_gripper()`).
+2. All `open_gripper()` calls that follow `_detach_cube_from_gripper()` in `place_cube_at()`
+   now pass `allowed_object=f"{cube_name}_piece"` (4 call sites: steps 2/3/4 fail paths + step 5).
+3. `place_cube_at()` step 6 `_move_to_position()` now passes `allowed_object=cube_id`.
+4. `_remove_cube_from_scene()` updated to use `_apply_scene_sync` (was topic + sleep).
+5. `--home` handler: after `_detach_all_cubes()`, also calls `_remove_cube_from_scene()` for
+   each cube (clears world objects), then calls `go_home()`, then re-adds cubes at tracked positions.
+
+**Key constraint learned**:
+- **MoveIt `decoupleObject()` re-adds to world**: When detaching an attached collision object,
+  MoveIt removes it from `attached_collision_objects` AND re-adds it to `world.collision_objects`
+  at the arm's current TF position. Any plan starting from that same position will be
+  START_STATE_IN_COLLISION unless the cube is passed as `allowed_object`.
+
+**Key files modified**:
+- `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py`:
+  - `open_gripper()`: added `allowed_object` parameter
+  - `place_cube_at()` steps 2/3/4 failure paths + step 5: `open_gripper(allowed_object=cube_id)`
+  - `place_cube_at()` step 6: `_move_to_position(..., allowed_object=cube_id)`
+  - `_remove_cube_from_scene()`: uses `_apply_scene_sync` instead of topic + sleep
+  - `--home` handler: removes world cubes before `go_home()`, re-adds after
+
+**No rebuild required** — Python-only changes, symlink-install is in effect.
+
+---
+
+## Latest Session Changes (2026-02-24)
+
+### Bug: Cube still follows arm on `--home` despite previous detach fixes
+
+**Root cause**: Race condition between topic-based planning scene updates and MoveIt's planning.
+
+`_detach_cube_from_gripper()` published to `/planning_scene` (a topic) and then called
+`time.sleep(0.5)`. But `time.sleep()` is a plain Python sleep — the ROS2 executor is NOT
+spinning during it. MoveIt2's `/planning_scene` subscriber callback only fires when an
+executor spins. So by the time `go_home()` submitted its MoveGroup action goal (which calls
+`rclpy.spin_until_future_complete()`), the detach message was still queued. MoveIt processed
+the detach at the same time it was computing the home plan — creating a race where the plan
+was often computed WITH the cube still attached.
+
+**Fix**: Replaced `self.scene_publisher.publish(scene_msg)` + `time.sleep()` with a
+synchronous `/apply_planning_scene` service call in both `_attach_cube_to_gripper` and
+`_detach_cube_from_gripper`. The service returns only after MoveIt has fully processed the
+scene change, eliminating the race.
+
+Added `_apply_scene_sync(scene_msg)` helper that uses the service with a topic-publish
+fallback if the service isn't available.
+
+Also added `scene_msg.robot_state.is_diff = True` to both methods for explicitness.
+
+**Key files modified**:
+- `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py`:
+  - Import: added `from moveit_msgs.srv import ApplyPlanningScene`
+  - `__init__`: added `_apply_scene_client` (service client for `/apply_planning_scene`)
+  - Added `_apply_scene_sync()` helper method
+  - `_attach_cube_to_gripper()`: now uses `_apply_scene_sync()` + `robot_state.is_diff = True`
+  - `_detach_cube_from_gripper()`: now uses `_apply_scene_sync()` + `robot_state.is_diff = True`
+
+**No rebuild required** — Python-only changes, symlink-install is in effect.
+
+**Key constraint learned**:
+- `time.sleep()` does NOT spin the ROS2 executor. Planning scene topic publishes are queued
+  but not delivered to MoveIt until an executor spin occurs. For any planning scene update
+  that must be processed BEFORE the next motion goal, use `/apply_planning_scene` service
+  (synchronous) instead of the `/planning_scene` topic.
+
+---
+
+## Latest Session Changes (2026-02-22)
+
+### Bug: Cube follows arm on `--home` even after successful `--place`
+
+**Root cause (primary)**: `--home` handler had no cleanup — it called `go_home()` directly without checking for or detaching any attached cube. If any prior command left a cube attached (successful place with slow MoveIt processing, failed place, unexpected exception), `--home` dragged the cube along.
+
+**Root cause (secondary)**: `_detach_cube_from_gripper()` sleep was only 0.2s. In failure-path cleanups where `open_gripper()` completes quickly (gripper already open), the process could exit within ~0.5s of the detach publish — possibly before MoveIt's planning scene monitor processed the message.
+
+**Root cause (tertiary)**: `place_cube_at()` had no defensive cleanup at entry. A stale attachment from a prior invocation would cause inconsistent state when the new invocation re-attached the same cube.
+
+**Fixes**:
+1. Added `_detach_all_cubes()` method — iterates `self.cubes` and calls `_detach_cube_from_gripper()` on each. REMOVE on a non-attached object is a no-op in MoveIt (safe to call always).
+2. `--home` handler now calls `controller._detach_all_cubes()` before `go_home()`.
+3. `place_cube_at()` now calls `_detach_cube_from_gripper(cube_name)` at the very start (before any motion) as defensive cleanup.
+4. `_detach_cube_from_gripper()` sleep increased from 0.2s → 0.5s.
+
+**Key files modified**:
+- `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py`:
+  - `_detach_cube_from_gripper()`: sleep 0.2s → 0.5s
+  - Added `_detach_all_cubes()` method after `_detach_cube_from_gripper()`
+  - `place_cube_at()`: added `_detach_cube_from_gripper(cube_name)` at entry
+  - `main()` `--home` handler: added `controller._detach_all_cubes()` before `go_home()`
+
+**No rebuild required** — Python-only changes, symlink-install is in effect.
 
 ---
 

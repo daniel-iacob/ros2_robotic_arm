@@ -13,15 +13,20 @@ import time
 import rclpy
 from geometry_msgs.msg import Pose
 from moveit_msgs.action import MoveGroup
+from moveit_msgs.srv import ApplyPlanningScene
 from moveit_msgs.msg import (
+    AllowedCollisionMatrix,
+    AttachedCollisionObject,
     BoundingVolume,
     CollisionObject,
     Constraints,
     JointConstraint,
+    ObjectColor,
     PlanningScene,
     PositionConstraint,
     RobotState,
 )
+from std_msgs.msg import ColorRGBA
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
@@ -54,18 +59,26 @@ class SimpleMoveArm:
 
         self.logger.info("Connected to move_group action server")
 
-        # Log diagnostics
-        self._log_diagnostics()
-
         # Publisher for planning scene updates
         self.scene_publisher = node.create_publisher(PlanningScene, "/planning_scene", 10)
 
-        # Subscriber for joint state feedback
+        # Service client for synchronous planning scene updates (attach/detach)
+        self._apply_scene_client = node.create_client(ApplyPlanningScene, '/apply_planning_scene')
+        if not self._apply_scene_client.wait_for_service(timeout_sec=5.0):
+            self.logger.warn('apply_planning_scene service not available — will fall back to topic')
+
+        # Subscribe to joint states early (before diagnostics subprocess blocks ROS callbacks)
+        # so _get_current_robot_state() returns the actual arm position on the first plan.
         self.joint_state_lock = threading.Lock()
         self.current_joint_state = None
         self.joint_state_sub = node.create_subscription(
             JointState, "/joint_states", self._joint_state_callback, 10
         )
+        # Spin briefly to receive at least one joint state message
+        rclpy.spin_once(node, timeout_sec=0.5)
+
+        # Log diagnostics (runs a blocking subprocess — must come after joint state setup)
+        self._log_diagnostics()
 
         # Cube positions (tracked dynamically)
         # Format: (x, y, z) in base_link frame
@@ -182,13 +195,23 @@ class SimpleMoveArm:
 
         # Step 3: If grasping, move closer and close gripper
         if grasp:
-            # Move closer (2cm above)
-            if self._move_to_position(target_x, target_y, cube_pos[2] + 0.02):
+            # Use per-plan ACM to allow cube-gripper collision during descent and close.
+            # The cube stays in the world scene (stays visible in RViz) — only these
+            # specific plans ignore the cube collision object.
+            cube_id = f"{cube_name}_piece"
+
+            # Move closer (2cm above) — cube ignored for collision checking
+            if self._move_to_position(target_x, target_y, cube_pos[2] + 0.02, allowed_object=cube_id):
                 time.sleep(0.5)
-                # Move to grasp
-                if self._move_to_position(target_x, target_y, cube_pos[2]):
+                # Move to grasp position — cube ignored
+                if self._move_to_position(target_x, target_y, cube_pos[2], allowed_object=cube_id):
                     time.sleep(0.5)
-                    # Close gripper
+                    # Attach cube to gripper BEFORE closing — touch_links allows
+                    # finger-cube contact so MoveIt won't block the gripper close
+                    self._attach_cube_to_gripper(cube_name)
+                    time.sleep(0.2)
+                    # Close gripper — succeeds because cube is now an attached object
+                    # with touch_links covering the finger links
                     self.close_gripper()
                     time.sleep(1.0)
                     # Lift
@@ -347,7 +370,7 @@ class SimpleMoveArm:
 
         return self._send_move_goal(goal_msg)
 
-    def _move_to_position(self, x: float, y: float, z: float) -> bool:
+    def _move_to_position(self, x: float, y: float, z: float, allowed_object: str = None) -> bool:
         """
         Move end-effector to specified Cartesian position.
 
@@ -359,6 +382,9 @@ class SimpleMoveArm:
 
         Args:
             x, y, z: Target position in base_link frame
+            allowed_object: Optional collision object ID to ignore during this plan.
+                Used during grasp to allow the arm to move through the cube's space
+                without removing it from the scene (keeps it visible in RViz).
 
         Returns:
             True if succeeded, False otherwise
@@ -416,40 +442,56 @@ class SimpleMoveArm:
 
         goal_msg.request.goal_constraints.append(goal_constraints)
 
-        goal_msg.planning_options.planning_scene_diff.is_diff = True
-        goal_msg.planning_options.planning_scene_diff.robot_state.is_diff = True
+        # Apply per-plan ACM diff if an object should be ignored for this plan
+        if allowed_object:
+            goal_msg.planning_options.planning_scene_diff = self._make_allowed_collision_diff(
+                allowed_object
+            )
+        else:
+            goal_msg.planning_options.planning_scene_diff.is_diff = True
+            goal_msg.planning_options.planning_scene_diff.robot_state.is_diff = True
+
         goal_msg.planning_options.plan_only = False
         goal_msg.planning_options.replan = True
         goal_msg.planning_options.replan_attempts = 3
 
         return self._send_move_goal(goal_msg)
 
-    def open_gripper(self) -> bool:
+    def open_gripper(self, allowed_object: str = None) -> bool:
         """
         Open gripper to fully open position.
+
+        Args:
+            allowed_object: Optional collision object ID to ignore during planning.
+                Pass the cube ID after detaching, since MoveIt re-adds the cube to the
+                world scene at the arm's current position on detach.
 
         Returns:
             True if succeeded, False otherwise
         """
         self.logger.info("Opening gripper...")
-        return self._move_gripper(0.0)
+        return self._move_gripper(0.0, allowed_object=allowed_object)
 
-    def close_gripper(self) -> bool:
+    def close_gripper(self, allowed_object: str = None) -> bool:
         """
         Close gripper to closed position.
+
+        Args:
+            allowed_object: Optional collision object ID to ignore during planning.
 
         Returns:
             True if succeeded, False otherwise
         """
         self.logger.info("Closing gripper...")
-        return self._move_gripper(-0.04)
+        return self._move_gripper(-0.04, allowed_object=allowed_object)
 
-    def _move_gripper(self, position: float) -> bool:
+    def _move_gripper(self, position: float, allowed_object: str = None) -> bool:
         """
         Move gripper to specified position.
 
         Args:
             position: Target position for left_finger_joint
+            allowed_object: Optional collision object ID to ignore during this plan.
 
         Returns:
             True if succeeded, False otherwise
@@ -481,9 +523,14 @@ class SimpleMoveArm:
 
         goal_msg.request.goal_constraints.append(goal_constraints)
 
-        # Set planning options
-        goal_msg.planning_options.planning_scene_diff.is_diff = True
-        goal_msg.planning_options.planning_scene_diff.robot_state.is_diff = True
+        # Apply per-plan ACM diff if an object should be ignored for this plan
+        if allowed_object:
+            goal_msg.planning_options.planning_scene_diff = self._make_allowed_collision_diff(
+                allowed_object
+            )
+        else:
+            goal_msg.planning_options.planning_scene_diff.is_diff = True
+            goal_msg.planning_options.planning_scene_diff.robot_state.is_diff = True
         goal_msg.planning_options.plan_only = False
         goal_msg.planning_options.replan = False
 
@@ -567,14 +614,25 @@ class SimpleMoveArm:
 
         cube.primitives.append(primitive)
         cube.primitive_poses.append(pose)
-        cube.operation = CollisionObject.MOVE  # Update existing object
+        cube.operation = CollisionObject.ADD  # ADD works whether object exists or not (after removal)
 
-        # Publish to planning scene
         scene_msg = PlanningScene()
         scene_msg.is_diff = True
         scene_msg.world.collision_objects.append(cube)
 
-        self.scene_publisher.publish(scene_msg)
+        # Re-apply color — MoveIt's decoupleObject() re-adds the cube geometry but loses
+        # the ObjectColor set by scene_manager. Always re-publish the color here.
+        _colors = {
+            "blue": ColorRGBA(r=0.0, g=0.0, b=1.0, a=1.0),
+            "red": ColorRGBA(r=1.0, g=0.0, b=0.0, a=1.0),
+        }
+        if cube_name in _colors:
+            obj_color = ObjectColor()
+            obj_color.id = f"{cube_name}_piece"
+            obj_color.color = _colors[cube_name]
+            scene_msg.object_colors.append(obj_color)
+
+        self._apply_scene_sync(scene_msg)
 
         # Update internal tracking
         self.cubes[cube_name] = (x, y, z)
@@ -582,8 +640,114 @@ class SimpleMoveArm:
         self.logger.info("Cube position updated successfully")
         return True
 
+    def _remove_cube_from_scene(self, cube_name: str):
+        """Remove cube world collision object from planning scene synchronously."""
+        cube = CollisionObject()
+        cube.header.frame_id = "base_link"
+        cube.id = f"{cube_name}_piece"
+        cube.operation = CollisionObject.REMOVE
+
+        scene_msg = PlanningScene()
+        scene_msg.is_diff = True
+        scene_msg.world.collision_objects.append(cube)
+
+        self.logger.info(f"Removing {cube_name} cube from world scene...")
+        result = self._apply_scene_sync(scene_msg)
+        self.logger.info(f"Removed {cube_name} cube from world scene (success={result})")
+
+    def _make_allowed_collision_diff(self, object_id: str) -> PlanningScene:
+        """Return a PlanningScene diff that marks object_id as collision-passthrough.
+
+        Included in planning_options.planning_scene_diff so only the specific plan
+        ignores the object — the world scene (and RViz visual) is unaffected.
+        """
+        acm = AllowedCollisionMatrix()
+        acm.default_entry_names = [object_id]
+        acm.default_entry_values = [True]
+
+        scene_diff = PlanningScene()
+        scene_diff.is_diff = True
+        scene_diff.robot_state.is_diff = True
+        scene_diff.allowed_collision_matrix = acm
+        return scene_diff
+
+    def _attach_cube_to_gripper(self, cube_name: str):
+        """Attach cube to grasp_link so it visually follows the arm during transport."""
+        cube_pos = self.cubes[cube_name]
+
+        primitive = SolidPrimitive()
+        primitive.type = SolidPrimitive.BOX
+        primitive.dimensions = [0.05, 0.05, 0.05]
+
+        pose = Pose()
+        pose.position.x = cube_pos[0]
+        pose.position.y = cube_pos[1]
+        pose.position.z = cube_pos[2]
+        pose.orientation.w = 1.0
+
+        cube = CollisionObject()
+        cube.header.frame_id = "base_link"
+        cube.id = f"{cube_name}_piece"
+        cube.primitives.append(primitive)
+        cube.primitive_poses.append(pose)
+        cube.operation = CollisionObject.ADD
+
+        attached = AttachedCollisionObject()
+        attached.link_name = "grasp_link"
+        attached.object = cube
+        attached.touch_links = ["left_finger", "right_finger", "grasp_link", "gripper_base"]
+
+        scene_msg = PlanningScene()
+        scene_msg.is_diff = True
+        scene_msg.robot_state.is_diff = True
+        scene_msg.robot_state.attached_collision_objects.append(attached)
+        self.logger.info(f"Attaching {cube_name} cube to gripper...")
+        result = self._apply_scene_sync(scene_msg)
+        self.logger.info(f"Attached {cube_name} cube to gripper (success={result})")
+
+    def _detach_cube_from_gripper(self, cube_name: str):
+        """Detach cube from gripper (leaves it at its last world position)."""
+        detach = AttachedCollisionObject()
+        detach.object.id = f"{cube_name}_piece"
+        detach.object.operation = CollisionObject.REMOVE
+
+        scene_msg = PlanningScene()
+        scene_msg.is_diff = True
+        scene_msg.robot_state.is_diff = True
+        scene_msg.robot_state.attached_collision_objects.append(detach)
+        self.logger.info(f"Detaching {cube_name} cube from gripper...")
+        result = self._apply_scene_sync(scene_msg)
+        self.logger.info(f"Detached {cube_name} cube from gripper (success={result})")
+
+    def _detach_all_cubes(self):
+        """Defensively detach all known cubes. Safe to call even if none are attached."""
+        for cube_name in self.cubes:
+            self._detach_cube_from_gripper(cube_name)
+
+    def _apply_scene_sync(self, scene_msg: PlanningScene) -> bool:
+        """Apply a planning scene change synchronously via service.
+
+        Unlike topic publish + sleep, this returns only after MoveIt has fully processed
+        the scene change — eliminating the race condition where the next motion goal is
+        submitted before the scene update is processed.
+
+        Falls back to topic publish + sleep if the service is not available.
+        """
+        if self._apply_scene_client.service_is_ready():
+            request = ApplyPlanningScene.Request()
+            request.scene = scene_msg
+            future = self._apply_scene_client.call_async(request)
+            rclpy.spin_until_future_complete(self.node, future, timeout_sec=5.0)
+            if future.done() and future.result() is not None:
+                return future.result().success
+            self.logger.warn('apply_planning_scene service call timed out or failed')
+        # Fallback: topic publish + sleep
+        self.scene_publisher.publish(scene_msg)
+        time.sleep(0.5)
+        return True
+
     def place_cube_at(
-        self, cube_name: str, target_x: float, target_y: float, target_z: float = 0.025
+        self, cube_name: str, target_x: float, target_y: float, target_z: float = None
     ) -> bool:
         """
         Pick up a cube and place it at a new location.
@@ -596,11 +760,18 @@ class SimpleMoveArm:
         Args:
             cube_name: Name of cube to move ("blue" or "red")
             target_x, target_y: Target position in base_link frame
-            target_z: Target height (default: 0.025 for sitting on floor)
+            target_z: Target height (default: same Z as current cube position)
 
         Returns:
             True if succeeded, False otherwise
         """
+        # Defensive cleanup: detach this cube if a prior failed invocation left it attached
+        self._detach_cube_from_gripper(cube_name)
+
+        # Default to same height as current cube so it stays on the same surface
+        if target_z is None:
+            target_z = self.cubes[cube_name][2]
+
         self.logger.info(
             f"Pick-and-place: Moving {cube_name} cube to "
             f"({target_x:.3f}, {target_y:.3f}, {target_z:.3f})"
@@ -616,27 +787,59 @@ class SimpleMoveArm:
         lift_z = current_pos[2] + 0.1  # 10cm above current position
         if not self._move_to_position(current_pos[0], current_pos[1], lift_z):
             self.logger.error("Failed to lift cube")
+            self._detach_cube_from_gripper(cube_name)
+            # After detach, decoupleObject re-adds cube to world at arm's position.
+            # Remove it so open_gripper doesn't hit START_STATE_IN_COLLISION
+            # (per-plan ACM is unreliable for gripper group).
+            self._remove_cube_from_scene(cube_name)
+            self.open_gripper()
+            self.update_cube_position(cube_name, *current_pos)
             return False
 
         # Step 3: Move to above target position
         target_approach_z = target_z + 0.1  # 10cm above target
         if not self._move_to_position(target_x, target_y, target_approach_z):
             self.logger.error("Failed to move to target approach")
+            self._detach_cube_from_gripper(cube_name)
+            self._remove_cube_from_scene(cube_name)
+            self.open_gripper()
+            self.update_cube_position(cube_name, *current_pos)
             return False
 
         # Step 4: Lower to target position
-        if not self._move_to_position(target_x, target_y, target_z):
-            self.logger.error("Failed to lower to target")
+        # Retry at higher Z if target is outside workspace at this XY
+        placed_z = target_z
+        for attempt in range(3):
+            if self._move_to_position(target_x, target_y, placed_z):
+                if placed_z != target_z:
+                    self.logger.warning(
+                        f"Placed cube at Z={placed_z:.3f} "
+                        f"(workspace limit; requested Z={target_z:.3f})"
+                    )
+                break
+            placed_z += 0.05
+            self.logger.warning(f"Target Z unreachable, retrying at Z={placed_z:.3f}")
+        else:
+            self.logger.error("Failed to lower to target at any reachable height")
+            self._detach_cube_from_gripper(cube_name)
+            self._remove_cube_from_scene(cube_name)
+            self.open_gripper()
+            self.update_cube_position(cube_name, *current_pos)
             return False
 
-        # Step 5: Release cube
+        # Step 5: Detach cube from gripper, then release.
+        # After detach, MoveIt's decoupleObject() re-adds the cube to the world scene
+        # at the arm's current position. Remove it so open_gripper and lift can proceed
+        # without START_STATE_IN_COLLISION.
+        self._detach_cube_from_gripper(cube_name)
+        self._remove_cube_from_scene(cube_name)
         self.open_gripper()
 
-        # Step 6: Update planning scene with new cube position
-        self.update_cube_position(cube_name, target_x, target_y, target_z)
+        # Step 6: Move arm up away from the placed position.
+        self._move_to_position(target_x, target_y, placed_z + 0.1)
 
-        # Step 7: Move up and away
-        self._move_to_position(target_x, target_y, target_z + 0.1)
+        # Step 7: Re-add cube at target position with correct color.
+        self.update_cube_position(cube_name, target_x, target_y, placed_z)
 
         self.logger.info("Pick-and-place completed successfully")
         return True
@@ -681,6 +884,12 @@ Examples:
     group.add_argument("--home", action="store_true", help="Return to home position")
     group.add_argument("--open", action="store_true", help="Open gripper")
     group.add_argument("--close", action="store_true", help="Close gripper")
+    group.add_argument(
+        "--detach",
+        type=str,
+        choices=["blue", "red"],
+        help="Detach cube from gripper and re-add it to scene at tracked position (recovery tool)",
+    )
 
     # Optional arguments
     parser.add_argument(
@@ -697,8 +906,8 @@ Examples:
     parser.add_argument(
         "--target-z",
         type=float,
-        default=0.025,
-        help="Target Z position for --place command (default: 0.025)",
+        default=None,
+        help="Target Z position for --place command (default: same Z as source cube)",
     )
 
     parsed_args = parser.parse_args()
@@ -735,11 +944,34 @@ Examples:
                 parsed_args.place, parsed_args.target_x, parsed_args.target_y, parsed_args.target_z
             )
         elif parsed_args.home:
+            controller._detach_all_cubes()
+            # Try go_home first — in the normal case (arm is NOT at a cube's position,
+            # e.g. 10cm above after a successful place), this succeeds without removing
+            # cubes from the world scene (no visual disruption in RViz).
             success = controller.go_home()
+            if not success:
+                # go_home failed — arm may be stuck at a cube's position causing
+                # START_STATE_IN_COLLISION. Remove world cubes and retry.
+                for cube_name in list(controller.cubes.keys()):
+                    controller._remove_cube_from_scene(cube_name)
+                success = controller.go_home()
+            # Re-add cubes at tracked positions with correct colors.
+            # decoupleObject (called during detach) re-adds the cube geometry but loses
+            # its ObjectColor, causing green cubes in RViz — this restores the colors.
+            for cube_name, pos in controller.cubes.items():
+                controller.update_cube_position(cube_name, pos[0], pos[1], pos[2])
         elif parsed_args.open:
             success = controller.open_gripper()
         elif parsed_args.close:
             success = controller.close_gripper()
+        elif parsed_args.detach:
+            cube_name = parsed_args.detach
+            controller._detach_cube_from_gripper(cube_name)
+            controller._remove_cube_from_scene(cube_name)
+            controller.open_gripper()
+            pos = controller.cubes[cube_name]
+            controller.update_cube_position(cube_name, pos[0], pos[1], pos[2])
+            success = True
 
         # Report result
         if success:
