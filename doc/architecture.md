@@ -4,6 +4,30 @@
 
 ---
 
+## Project Overview
+
+1. **A robotic arm that lives inside a computer.** No physical robot exists yet — everything runs in simulation, visualized in a 3D viewer called RViz.
+
+2. **The arm has a gripper** (like a hand) and can pick up objects, move them, and put them down somewhere else.
+
+3. **There are currently two colored cubes** in the scene — a blue one and a red one — sitting on a virtual table. These are the objects the arm practices with.
+
+4. **You control the arm by typing commands**, e.g. "pick up the blue cube" or "place it at this position". There's no physical button or joystick.
+
+5. **The arm figures out how to move by itself** — you give it a destination, it plans the path, avoids obstacles, and executes the motion. You don't program each joint angle manually.
+
+6. **The project is being built in stages.** Right now it's at stage 2 of 6. The arm can already pick and place objects reliably.
+
+7. **The next stages will add a camera** so the arm can see the scene, then computer vision to detect objects automatically rather than relying on hardcoded positions.
+
+8. **The final goal is voice/text control** — you say "take the blue cube and put it in the basket" and the arm does it, driven by an AI language model.
+
+9. **This is a learning project** for exploring ROS2 (the standard framework for programming robots), not a production system.
+
+10. **Everything is software** — the robot, the physics, the sensors. Nothing is real yet. Real hardware is a future consideration.
+
+---
+
 ## Node Architecture
 
 ```mermaid
