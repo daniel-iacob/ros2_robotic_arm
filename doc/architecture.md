@@ -22,7 +22,7 @@ flowchart TD
 
     subgraph app["Application (robotic_arm_bringup)"]
         scene_manager
-        move_to_cube
+        arm_cli["arm_cli (ArmController)"]
         motion_server
     end
 
@@ -56,10 +56,11 @@ flowchart TD
     camera_node -->|/camera/image_raw| vision_node
     vision_node -->|/detected_objects| validator_node
     vision_node -->|/detected_objects| motion_server
-    vision_node -->|/detected_objects| move_to_cube
 
-    scene_manager -->|/planning_scene| move_group
-    move_to_cube -->|/move_action| move_group
+    scene_manager -->|/planning_scene topic| move_group
+    arm_cli -->|/move_action| move_group
+    arm_cli -->|/apply_planning_scene svc| move_group
+    arm_cli -->|/get_planning_scene svc| move_group
     motion_server -->|/move_action| move_group
 
     move_group -->|follow_joint_trajectory| arm_controller
@@ -73,7 +74,7 @@ flowchart TD
     hw_drivers --> joint_state_broadcaster
     hw_drivers --> real_robot
 
-    joint_state_broadcaster -->|/joint_states| move_to_cube
+    joint_state_broadcaster -->|/joint_states| arm_cli
     joint_state_broadcaster -->|/joint_states| motion_server
     joint_state_broadcaster -->|/joint_states| rviz2
     move_group -->|/tf| rviz2
@@ -81,10 +82,48 @@ flowchart TD
 
 ---
 
+## Object Position Data Flow
+
+Shows how object positions flow through the system across CLI invocations.
+
+```mermaid
+sequenceDiagram
+    participant YAML as objects.yaml
+    participant SM as scene_manager
+    participant MG as MoveIt (move_group)
+    participant CLI1 as arm_cli (1st call)
+    participant CLI2 as arm_cli (2nd call)
+
+    Note over SM: Startup (one-shot)
+    YAML->>SM: read object definitions
+    SM->>MG: /planning_scene topic (ADD objects)
+    SM--xSM: exits
+
+    Note over CLI1: 1st CLI invocation
+    YAML->>CLI1: read YAML defaults
+    CLI1->>MG: /get_planning_scene (query positions)
+    MG-->>CLI1: current positions (same as YAML)
+    CLI1->>MG: /move_action (pick)
+    CLI1->>MG: /move_action (place at new XY)
+    CLI1->>MG: /apply_planning_scene (update object position)
+    CLI1--xCLI1: exits
+
+    Note over CLI2: 2nd CLI invocation
+    YAML->>CLI2: read YAML defaults
+    CLI2->>MG: /get_planning_scene (query positions)
+    MG-->>CLI2: actual positions (updated by 1st call)
+    Note over CLI2: YAML defaults overridden
+    CLI2->>MG: /move_action (pick from correct position)
+```
+
+**Key insight**: MoveIt (`move_group`) is the persistent authority for object positions. Each CLI process is ephemeral — it reads YAML defaults, then queries MoveIt to override them with actual positions. After moving an object, it updates MoveIt directly via `/apply_planning_scene`. The next CLI invocation picks up those changes via `/get_planning_scene`.
+
+---
+
 ## Project Roadmap
 
 - [x] **Phase 1** — CLI motion control (`move_to_cube`), scene manager, MoveIt2 integration, pick-and-place
-- [ ] **Phase 2** — Refactor CLI into importable Python motion library (no new nodes)
+- [x] **Phase 2** — Importable motion library (`ArmController`) + YAML config + thin CLI (`arm`)
 - [ ] **Phase 3** — `motion_server` node: persistent ROS2 action server replacing one-shot CLI
 - [ ] **Phase 4** — `camera_node`: camera sensor integration, publishes `/camera/image_raw`
 - [ ] **Phase 5** — `vision_node`: object detection from camera, publishes `/detected_objects`; replaces hardcoded cube positions
@@ -95,13 +134,15 @@ flowchart TD
 
 ## Topics & Actions
 
-| Name | Msg Type | Kind | Publisher | Subscriber / Client |
-|------|----------|------|-----------|---------------------|
-| `/planning_scene` | `moveit_msgs/PlanningScene` | topic | `scene_manager`, `move_to_cube` | `move_group` |
-| `/joint_states` | `sensor_msgs/JointState` | topic | `joint_state_broadcaster` | `move_to_cube`, `robot_state_publisher` |
+| Name | Msg Type | Kind | Publisher / Server | Subscriber / Client |
+|------|----------|------|--------------------|---------------------|
+| `/planning_scene` | `moveit_msgs/PlanningScene` | topic | `scene_manager`, `arm_cli` (fallback) | `move_group` |
+| `/apply_planning_scene` | `moveit_msgs/ApplyPlanningScene` | service | `move_group` (server) | `arm_cli` (client) |
+| `/get_planning_scene` | `moveit_msgs/GetPlanningScene` | service | `move_group` (server) | `arm_cli` (client) |
+| `/joint_states` | `sensor_msgs/JointState` | topic | `joint_state_broadcaster` | `arm_cli`, `robot_state_publisher` |
 | `/tf` / `/tf_static` | `tf2_msgs/TFMessage` | topic | `robot_state_publisher` | `move_group`, RViz |
 | `/display_planned_path` | `moveit_msgs/DisplayTrajectory` | topic | `move_group` | RViz |
-| `/move_action` | `moveit_msgs/MoveGroup` | action | `move_group` (server) | `move_to_cube` (client) |
+| `/move_action` | `moveit_msgs/MoveGroup` | action | `move_group` (server) | `arm_cli` (client) |
 | `/arm_controller/follow_joint_trajectory` | `control_msgs/FollowJointTrajectory` | action | `arm_controller` (server) | `move_group` (client) |
 | `/gripper_controller/follow_joint_trajectory` | `control_msgs/FollowJointTrajectory` | action | `gripper_controller` (server) | `move_group` (client) |
 
@@ -113,7 +154,7 @@ flowchart TD
 |---------|------|-----------|
 | `robotic_arm_description` | Robot model: URDF/xacro, meshes, TF structure | `urdf/robotic_arm.urdf.xacro` |
 | `robotic_arm_moveit_config` | MoveIt2 config: planning groups, IK, controllers, joint limits | `config/robotic_arm.srdf`, `config/kinematics.yaml`, `config/moveit_controllers.yaml` |
-| `robotic_arm_bringup` | Application logic: scene setup, motion control, launch entry point | `robotic_arm_bringup/move_to_cube.py`, `robotic_arm_bringup/scene_manager.py`, `launch/arm_system.launch.py` |
+| `robotic_arm_bringup` | Application logic: scene setup, motion library, CLI, object config | `arm_controller.py`, `arm_cli.py`, `scene_manager.py`, `config/objects.yaml`, `launch/arm_system.launch.py` |
 
 ---
 
@@ -145,14 +186,20 @@ flowchart TD
 - **Rejected**: ACM for gripper — returns 99999 regardless
 
 ### 6. Lift arm before re-adding cube to world scene (step ordering)
-- **What**: In `place_cube_at()`, the arm lifts away from the placed position BEFORE `update_cube_position()` re-adds the cube to the planning scene. Sequence: detach → open gripper → lift → re-add cube.
-- **Why**: If the cube is re-added first, the arm's start state is inside the cube's collision geometry → MoveIt rejects the lift plan with `START_STATE_IN_COLLISION`. The ACM `planning_scene_diff` approach does NOT fix start state collision checks — they are evaluated separately from path collision.
-- **Rejected**: Re-adding cube then lifting with allowed_object ACM — START_STATE_IN_COLLISION is checked before planning begins, not during path planning
+- **What**: In `place()`, the arm lifts away from the placed position BEFORE `update_object_position()` re-adds the object to the planning scene. Sequence: detach → remove from scene → open gripper → lift → re-add object with color.
+- **Why**: If the object is re-added first, the arm's start state is inside the object's collision geometry → MoveIt rejects the lift plan with `START_STATE_IN_COLLISION`. The ACM `planning_scene_diff` approach does NOT fix start state collision checks — they are evaluated separately from path collision.
+- **Rejected**: Re-adding object then lifting with allowed_object ACM — START_STATE_IN_COLLISION is checked before planning begins, not during path planning
 
 ### 7. Open-loop mock hardware
 - **What**: `arm_controller` configured with `open_loop_control: true`; only `position` state interfaces (no velocity)
 - **Why**: Mock hardware (no Gazebo) doesn't feed back real joint velocities. Without open-loop mode, the controller's state feedback checks fail and reject trajectories.
 - **Note**: URDF's `<ros2_control>` section must export only `position` state interface — must match controller config exactly
+
+### 8. MoveIt as persistent position authority (not file/DB)
+- **What**: Object positions persist across CLI invocations by querying MoveIt's `/get_planning_scene` service at startup. After moving an object, `ArmController` updates MoveIt via `/apply_planning_scene`. The next CLI invocation queries MoveIt to get the updated positions, overriding YAML defaults.
+- **Why**: MoveIt already holds the authoritative planning scene. No need for a separate persistence layer (file, database, or persistent node). Simple and zero additional infrastructure.
+- **Limitation**: If MoveIt restarts, positions reset to YAML defaults (scene_manager re-publishes from `objects.yaml`). Acceptable for Phase 2 — Phase 3's persistent action server will hold state in memory.
+- **Rejected**: Persistent state file — adds complexity, risk of desync with MoveIt. Persistent ROS2 node — over-engineering for Phase 2.
 
 ---
 
@@ -162,7 +209,7 @@ These constraints have caused bugs; remember them when making changes:
 
 1. **Always set `start_state` on every MoveGroup plan** — when `is_diff = True` without explicit `start_state`, MoveIt assumes the robot is at home (0,0,0). Works for first move, breaks all subsequent moves. Fix: subscribe to `/joint_states` and pass current state via `_get_current_robot_state()`.
 
-2. **`AttachedCollisionObject` persists across CLI invocations** — it lives in the MoveIt server process, not in Python memory. If any code path exits without calling `_detach_cube_from_gripper()`, the cube stays attached forever (until sim restart). Any later `--home` or other command will carry the cube along.
+2. **`AttachedCollisionObject` persists across CLI invocations** — it lives in the MoveIt server process, not in Python memory. If any code path exits without calling `_detach_object()`, the object stays attached forever (until sim restart). Any later `home` or other command will carry the object along.
 
 3. **Per-plan ACM (`planning_scene_diff`) does NOT fix start state collision** — start state collision is checked before planning begins as a separate step. The only fix is to ensure the arm is not inside a collision object at the start of a plan.
 
@@ -172,4 +219,6 @@ These constraints have caused bugs; remember them when making changes:
 
 6. **`colcon build` required (not `--symlink-install`) for non-Python files** — Python scripts with `--symlink-install` update without rebuild, but config files (YAML, URDF, SRDF) always need a full rebuild.
 
-7. **KDL IK workspace**: 3-DOF arm cannot reach all XYZ positions. Minimum reachable Z depends on XY radius. At radius ~0.36m (e.g. 0.2, 0.3), minimum Z ≈ 0.4. At radius ~0.41m (e.g. 0.4, 0.1), Z = 0.3 is reachable. `place_cube_at()` auto-retries at Z+0.05 increments.
+7. **KDL IK workspace**: 3-DOF arm cannot reach all XYZ positions. Minimum reachable Z depends on XY radius. At radius ~0.36m (e.g. 0.2, 0.3), minimum Z ≈ 0.4. At radius ~0.41m (e.g. 0.4, 0.1), Z = 0.3 is reachable. `place()` auto-retries at Z+0.05 increments.
+
+8. **`time.sleep()` does NOT spin the ROS2 executor** — topic publishes are queued but not delivered to MoveIt until the next `spin_once()` or `spin_until_future_complete()`. For planning scene updates that must be processed before the next motion, use the `/apply_planning_scene` service (synchronous), not the `/planning_scene` topic.

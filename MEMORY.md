@@ -5,113 +5,85 @@ Detailed context and history live in `CLAUDE.md`.
 
 ---
 
+## Project Structure (Phase 2)
+
+- **Motion library**: `arm_controller.py` → `ArmController` class (importable)
+- **CLI**: `arm_cli.py` → subcommands: `pick`, `place`, `home`, `move-to`, `open-gripper`, `close-gripper`, `reset`
+- **Object config**: `config/objects.yaml` → single source of truth (both scene_manager and ArmController read it)
+- **Object IDs**: match YAML keys (`blue_cube`, `red_cube` — not `blue_piece`)
+- **Position persistence**: MoveIt is the authority. `_sync_object_positions()` queries `/get_planning_scene` at startup → overrides YAML defaults. After moving, `update_object_position()` writes back to MoveIt via `/apply_planning_scene`.
+
+---
+
 ## ROS2 Executor / Message Delivery
 
 **`time.sleep()` does NOT spin the ROS2 executor.**
 
-Topic publishes (`publisher.publish()`) enqueue the message at the DDS layer, but the
-subscriber's callback only fires when an executor spins (`spin_once`,
-`spin_until_future_complete`, etc.). A plain Python sleep does not spin anything.
-
-**Consequence**: If you publish to `/planning_scene` and then `time.sleep(N)`, MoveIt has NOT
-necessarily processed the update. The message will be delivered when the next
-`rclpy.spin_*` call occurs — which may be inside the next motion goal submission, causing a
-race condition.
-
-**Fix**: For any planning scene change that must be processed BEFORE the next motion,
+For any planning scene change that must be processed BEFORE the next motion,
 use the `/apply_planning_scene` **service** (synchronous) instead of the topic.
-See `_apply_scene_sync()` in `move_to_cube.py`.
+See `_apply_scene_sync()` in `arm_controller.py`.
 
 ---
 
 ## MoveIt2 Planning Scene — Attach/Detach
 
-- Attach: publish `AttachedCollisionObject` with `operation = ADD` via service ✓
-- Detach: publish `AttachedCollisionObject` with `operation = REMOVE` via service ✓
 - Set both `scene_msg.is_diff = True` AND `scene_msg.robot_state.is_diff = True`
-- `link_name` is required on attach; not required on detach (MoveIt searches all links by ID)
-- REMOVE on a non-attached object is a **no-op on world objects** — it does NOT remove the
-  cube from the world scene, only from attached objects
+- REMOVE on a non-attached object is a **no-op** — does NOT remove from world scene
 
 **`decoupleObject()` side effect — critical:**
-When MoveIt processes a detach (REMOVE on AttachedCollisionObject), it ALSO re-adds the cube
-as a world collision object at the arm's current TF position. If the arm is still at that
-position, any subsequent plan will fail with START_STATE_IN_COLLISION.
+When MoveIt processes a detach, it re-adds the object to the world at the arm's current
+position → START_STATE_IN_COLLISION.
 
-**Fix pattern after every `_detach_cube_from_gripper()`:**
+**Fix pattern after every `_detach_object()`:**
 ```python
-self._detach_cube_from_gripper(cube_name)
-self._remove_cube_from_scene(cube_name)  # remove what decoupleObject re-added
-self.open_gripper()                       # no collision, no ACM needed
-self._move_to_position(x, y, z)           # plan freely
-self.update_cube_position(cube_name, x, y, z)  # re-add with color
+self._detach_object(name)
+self._remove_object_from_scene(name)
+self.open_gripper()
+self._move_to_position(x, y, z)
+self.update_object_position(name, x, y, z)  # re-add with color from YAML
 ```
-Do NOT use `allowed_object` (per-plan ACM) for post-detach ops — unreliable for gripper
-group AND arm group (unless `_make_allowed_collision_diff` has `robot_state.is_diff = True`).
-
-**For `--home`:**
-Try `go_home()` first (no visual disruption). If it fails (arm stuck at cube position),
-remove all world cubes, retry, then re-add all with `update_cube_position()`.
 
 ---
 
-## ObjectColor — Cube Colors in RViz
+## ObjectColor
 
-When re-adding cubes to the planning scene (via `CollisionObject.ADD`), always include
-`ObjectColor` in the `PlanningScene` message. MoveIt's `decoupleObject()` and plain ADD
-operations lose the color set by `scene_manager.py` at startup → cubes appear green.
-
-`update_cube_position()` handles this automatically (includes blue/red `ColorRGBA`).
+Always include `ObjectColor` when re-adding objects. MoveIt loses color on detach/ADD.
+`update_object_position()` reads color from `objects.yaml` automatically.
 
 ---
 
 ## Per-plan ACM (`_make_allowed_collision_diff`)
 
-**Must set `scene_diff.robot_state.is_diff = True`**. Without it, MoveIt resets the planning
-scene's robot state (empty state with `is_diff=False`), effectively ignoring the ACM.
-
-Per-plan ACM works for **arm group** grasp approach (descent into cube). Does NOT work
-reliably for **gripper group** (error 99999 or -10). For gripper-cube interaction, use
-`AttachedCollisionObject` with `touch_links` instead.
+**Must set `robot_state.is_diff = True`**. Per-plan ACM works for **arm group** descent.
+Does NOT work for **gripper group**. Use `AttachedCollisionObject` with `touch_links` instead.
 
 ---
 
 ## MoveIt2 Planning — Start State
 
-Always set `goal_msg.request.start_state = self._get_current_robot_state()` on every
-MoveGroup plan. Without it MoveIt assumes the robot is at home (0,0,0), which causes wrong
-trajectories for any move after the first.
+Always set `start_state = self._get_current_robot_state()` on every MoveGroup plan.
 
 ---
 
 ## Gripper Close — Error 99999
 
-Attach the cube to the gripper (`AttachedCollisionObject` with `touch_links`) BEFORE calling
-`close_gripper()`. Per-plan ACM (`planning_scene_diff`) works for arm group but NOT reliably
-for gripper group. `touch_links` is the only reliable way to allow finger-cube contact.
+Attach object with `touch_links` BEFORE `close_gripper()`.
 
 ---
 
 ## AttachedCollisionObject Persistence
 
-`AttachedCollisionObject` lives in the MoveIt server, not in the Python process.
-It persists across CLI invocations. Any early exit that doesn't detach leaves the cube
-attached for ALL future commands in the same MoveIt session.
-
-**Pattern**: call `_detach_cube_from_gripper(cube_name)` at the start of any function
-that will re-attach a cube (defensive cleanup), and before every early `return False`
-after an attachment has been made.
+Persists in MoveIt server across CLI calls. Always detach before early returns.
+`place()` calls `_detach_object()` at entry as defensive cleanup.
 
 ---
 
 ## Mimic Joints (ros2_control)
 
-Mimic joints cannot have `command_interface` in `ros2_control` config — only
-`state_interface`. Mimic info is read from the standard URDF `<mimic>` tag.
+No `command_interface` — only `state_interface`. Mimic info from URDF `<mimic>` tag.
 
 ---
 
 ## open_loop_control
 
-`arm_controller` requires `open_loop_control: true` in ros2_controllers.yaml for mock
-hardware (bypasses state feedback checks that don't apply to mock).
+`arm_controller` requires `open_loop_control: true` in ros2_controllers.yaml for mock hardware.

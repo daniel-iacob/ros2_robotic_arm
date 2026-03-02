@@ -27,17 +27,18 @@ Keep the **Latest Session Changes** section current: add a new dated entry at th
 > Read this first. It gives you enough context to start working without parsing the whole file.
 > Also read **[`MEMORY.md`](MEMORY.md)** — compact accumulated patterns and constraints.
 
-**What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Goal: eventually LLM-controlled manipulation. Currently Phase 1 — CLI-driven pick-and-place with MoveIt2 mock hardware. No Gazebo, no camera, no LLM yet.
+**What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Goal: eventually LLM-controlled manipulation. Currently Phase 2 — importable motion library + CLI with MoveIt2 mock hardware. No Gazebo, no camera, no LLM yet.
 
 **Running nodes** (after `./run.sh sim`):
-- `scene_manager` — one-shot startup node, adds blue/red cube collision objects to MoveIt
+- `scene_manager` — one-shot startup node, spawns objects from `objects.yaml` into MoveIt
 - `move_group` — MoveIt2 planning server, action server at `/move_action`
 - `arm_controller` / `gripper_controller` / `joint_state_broadcaster` — ros2_control layer
 - `robot_state_publisher` — TF broadcaster
 - `rviz2` — visualization
 
-**Entry point for motion**: `ros2 run robotic_arm_bringup move_to_cube [--cube/--place/--home/--open/--close/--detach]`
-**Primary file**: `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py`
+**Entry point for motion**: `ros2 run robotic_arm_bringup arm <command> [args]`
+**Motion library**: `src/robotic_arm_bringup/robotic_arm_bringup/arm_controller.py` (`ArmController` class)
+**CLI wrapper**: `src/robotic_arm_bringup/robotic_arm_bringup/arm_cli.py`
 
 **Critical constraints — always remember these**:
 
@@ -45,10 +46,10 @@ Keep the **Latest Session Changes** section current: add a new dated entry at th
 |------------|------------------------|
 | Always set `start_state` on every MoveGroup plan | Second+ moves plan from home (0,0,0) → wrong trajectories |
 | `AttachedCollisionObject` persists across CLI calls | Cube stays glued to arm across commands; `--home` drags it home |
-| Detach cube before every `return False` in `place_cube_at()` | Cube stays attached after failed place; subsequent moves carry it |
-| After `_detach_cube_from_gripper`, call `_remove_cube_from_scene` before open_gripper/move | MoveIt `decoupleObject()` re-adds cube to world at arm's position → START_STATE_IN_COLLISION (per-plan ACM unreliable for gripper group) |
-| `--home`: try `go_home()` first, remove cubes only on failure | Removing all cubes before go_home causes both cubes to disappear from RViz unnecessarily |
-| Always re-add cubes with `ObjectColor` after any scene removal | Cubes reappear as green (MoveIt default) instead of blue/red — `update_cube_position()` now handles this |
+| Detach object before every `return False` in `place()` | Object stays attached after failed place; subsequent moves carry it |
+| After `_detach_object`, call `_remove_object_from_scene` before open_gripper/move | MoveIt `decoupleObject()` re-adds object to world at arm's position → START_STATE_IN_COLLISION (per-plan ACM unreliable for gripper group) |
+| `home()`: try `_go_home()` first, remove objects only on failure | Removing all objects before go_home causes them to disappear from RViz unnecessarily |
+| Always re-add objects with `ObjectColor` after any scene removal | Objects reappear as green (MoveIt default) — `update_object_position()` reads color from YAML |
 | `_make_allowed_collision_diff` must set `robot_state.is_diff = True` | Empty robot_state with `is_diff=False` resets planning scene state → ACM ignored → START_STATE_IN_COLLISION |
 | Attach cube with `touch_links` BEFORE `close_gripper()` | Gripper close returns error 99999 (per-plan ACM doesn't work for gripper group) |
 | Use `/apply_planning_scene` service (not topic) for attach/detach | `time.sleep()` does NOT spin ROS2 executor; topic publishes aren't processed until next spin, creating a race with the next motion plan |
@@ -56,7 +57,9 @@ Keep the **Latest Session Changes** section current: add a new dated entry at th
 
 **Key files by task**:
 - Robot model / joints: `src/robotic_arm_description/urdf/robotic_arm.urdf.xacro`
-- Motion control logic: `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py`
+- Motion library: `src/robotic_arm_bringup/robotic_arm_bringup/arm_controller.py`
+- CLI wrapper: `src/robotic_arm_bringup/robotic_arm_bringup/arm_cli.py`
+- Object definitions: `src/robotic_arm_bringup/config/objects.yaml`
 - Scene initialization: `src/robotic_arm_bringup/robotic_arm_bringup/scene_manager.py`
 - MoveIt planning groups / named states: `src/robotic_arm_moveit_config/config/robotic_arm.srdf`
 - Controller config: `src/robotic_arm_moveit_config/config/moveit_controllers.yaml`
@@ -78,10 +81,11 @@ Keep the **Latest Session Changes** section current: add a new dated entry at th
 - **3 DOF arm** + parallel gripper
 
 ## Scene Objects & Coordinate System
-- **Blue cube** ("blue_piece"): (0.5, 0, 0.3) - 5cm cube, right of base at table height
-- **Red cube** ("red_piece"): (0, 0.5, 0.3) - 5cm cube, forward of base at table height
+- **Object definitions**: `src/robotic_arm_bringup/config/objects.yaml` (single source of truth)
+- **blue_cube**: (0.5, 0, 0.3) - 5cm box, right of base at table height
+- **red_cube**: (0, 0.5, 0.3) - 5cm box, forward of base at table height
 - **Coordinate system**: base_link frame (X-forward, Y-left, Z-up)
-- **Collision objects**: Cubes added to MoveIt2 planning scene for collision avoidance
+- **Collision objects**: Objects added to MoveIt2 planning scene via `scene_manager`
 
 ## Motion Control
 
@@ -104,43 +108,50 @@ Keep the **Latest Session Changes** section current: add a new dated entry at th
   - `closed` - Gripper fingers closed (-0.04m)
 
 ### Programmatic Control
+
+**CLI** (`ros2 run robotic_arm_bringup arm <command>`):
 ```bash
-# Move to blue cube (10cm above)
-ros2 run robotic_arm_bringup move_to_cube --cube blue
+# Pick up an object
+ros2 run robotic_arm_bringup arm pick blue_cube
 
-# Move to red cube
-ros2 run robotic_arm_bringup move_to_cube --cube red
+# Pick and place to new position (x y [z])
+ros2 run robotic_arm_bringup arm place blue_cube 0.4 0.1
+ros2 run robotic_arm_bringup arm place blue_cube 0.4 0.1 0.35
 
-# Move and grasp
-ros2 run robotic_arm_bringup move_to_cube --cube blue --grasp
-
-# Pick and place - move blue cube to new position
-# Valid targets: keep sqrt(x²+y²) between ~0.3-0.5m, avoid Z<0.3 at off-axis XY (auto-retries)
-ros2 run robotic_arm_bringup move_to_cube --place blue --target-x 0.4 --target-y 0.1
-ros2 run robotic_arm_bringup move_to_cube --place blue --target-x 0.35 --target-y 0.2
-ros2 run robotic_arm_bringup move_to_cube --place blue --target-x 0.1 --target-y 0.4  # near red cube
-# Note: (0.2, 0.3) is at workspace limit — arm can only reach Z≈0.4 there (warns but succeeds)
+# Move end-effector to arbitrary position
+ros2 run robotic_arm_bringup arm move-to 0.5 0.0 0.4
 
 # Gripper control
-ros2 run robotic_arm_bringup move_to_cube --open   # Open gripper
-ros2 run robotic_arm_bringup move_to_cube --close  # Close gripper
+ros2 run robotic_arm_bringup arm open-gripper
+ros2 run robotic_arm_bringup arm close-gripper
 
 # Return home
-ros2 run robotic_arm_bringup move_to_cube --home
+ros2 run robotic_arm_bringup arm home
 
-# Recovery: detach cube if it got stuck attached to gripper
-ros2 run robotic_arm_bringup move_to_cube --detach blue
-ros2 run robotic_arm_bringup move_to_cube --detach red
+# Full recovery (detach all, home, reset scene to YAML defaults)
+ros2 run robotic_arm_bringup arm reset
 ```
 
-**Implementation**: CLI script using MoveGroup action client (`/move_action`) — sends `PositionConstraint` goals, MoveIt handles IK via KDL
-**Scene Management**: Cube positions are tracked and updated in planning scene after moves
-**Future**: Can expand to action server for async control with feedback
+**Python API** (importable library):
+```python
+from robotic_arm_bringup.arm_controller import ArmController
+controller = ArmController(node)
+controller.pick("blue_cube")
+controller.place("blue_cube", 0.4, 0.1)
+controller.home()
+controller.reset()
+```
+
+**Implementation**: `ArmController` class using MoveGroup action client (`/move_action`).
+**Object config**: `objects.yaml` — single source of truth for names, positions, colors.
+**Scene Management**: Object positions tracked and updated in planning scene after moves.
 
 ## Key Files
 - `src/robotic_arm_description/urdf/robotic_arm.urdf.xacro` - Robot model
-- `src/robotic_arm_bringup/robotic_arm_bringup/scene_manager.py` - Scene setup
-- `src/robotic_arm_bringup/robotic_arm_bringup/move_to_cube.py` - Motion control CLI
+- `src/robotic_arm_bringup/config/objects.yaml` - Object definitions (names, positions, colors)
+- `src/robotic_arm_bringup/robotic_arm_bringup/arm_controller.py` - Motion library (`ArmController`)
+- `src/robotic_arm_bringup/robotic_arm_bringup/arm_cli.py` - CLI wrapper
+- `src/robotic_arm_bringup/robotic_arm_bringup/scene_manager.py` - Scene setup (reads objects.yaml)
 - `src/robotic_arm_moveit_config/` - MoveIt configuration
 - `run.sh` - Build/launch wrapper
 
@@ -149,12 +160,13 @@ ros2 run robotic_arm_bringup move_to_cube --detach red
 ✓ MoveIt2 integration with KDL IK solver
 ✓ Scene with colored cubes (collision objects)
 ✓ RViz visualization
-✓ Programmatic motion control (CLI script)
+✓ Programmatic motion control (importable `ArmController` library + CLI)
 ✓ Gripper control (open/close)
 ✓ Pick-and-place with planning scene updates
-✓ Dynamic cube position tracking
+✓ Dynamic object position tracking
+✓ YAML-based object configuration (`objects.yaml`)
 ✗ Camera (planned)
-✗ Vision-based cube detection (planned)
+✗ Vision-based object detection (planned)
 ✗ LLM integration (planned)
 
 ## Technical Details
@@ -175,11 +187,11 @@ ros2 run robotic_arm_bringup move_to_cube --detach red
 
 ### Pick-and-Place Architecture
 - **Approach**: Attach/detach + synchronous scene updates via `/apply_planning_scene` service
-- **Cube tracking**: Internal dictionary tracks current positions
+- **Object tracking**: `self.objects` dict tracks current positions; initialized from `objects.yaml`, then overridden by querying MoveIt via `/get_planning_scene` at startup (`_sync_object_positions()`). This ensures positions persist across CLI invocations — MoveIt is the authority.
 - **Scene updates**: `_apply_scene_sync()` — service call with topic fallback
-- **Sequence**: Approach → Descend (ACM) → Attach → Close gripper → Lift → Move → Lower → Detach → Remove from scene → Open gripper → Lift away → Re-add cube with color
-- **Post-detach pattern**: `_remove_cube_from_scene()` after every detach (decoupleObject re-adds cube at arm position)
-- **Colors**: `update_cube_position()` includes `ObjectColor` (blue/red) — MoveIt loses color on detach
+- **Sequence**: Approach → Descend (ACM) → Attach → Close gripper → Lift → Move → Lower → Detach → Remove from scene → Open gripper → Lift away → Re-add object with color
+- **Post-detach pattern**: `_remove_object_from_scene()` after every detach (decoupleObject re-adds at arm position)
+- **Colors**: `update_object_position()` reads color from `objects.yaml` — MoveIt loses color on detach
 
 ### Controller Configuration
 - **arm_controller**: `open_loop_control: true` — required for mock hardware (bypasses state feedback checks)
@@ -189,14 +201,46 @@ ros2 run robotic_arm_bringup move_to_cube --detach red
 ### Known Limitations
 - **3-DOF workspace**: Cannot achieve arbitrary orientations (missing wrist roll/pitch/yaw)
 - **Mock hardware**: No physics simulation (Gazebo integration planned)
-- **Static cubes**: Positions hardcoded, no real-time tracking yet
+- **Object positions**: Persist via MoveIt queries between CLI calls, but reset to YAML defaults if MoveIt restarts
 
 ### Future Architecture
-- **Phase 1** (Current): Simple CLI script with MoveGroup action client
-- **Phase 2** (Planned): Refactor into reusable motion library
+- **Phase 1** (Complete): Simple CLI script with MoveGroup action client
+- **Phase 2** (Current): Importable motion library (`ArmController`) + YAML config + thin CLI
 - **Phase 3** (Planned): ROS2 action server for async control
 - **Phase 4** (Planned): Camera integration for dynamic object detection
 - **Phase 5** (Planned): LLM interface for natural language control
+
+---
+
+## Latest Session Changes (2026-02-25, Phase 2 Refactor)
+
+### Phase 2: Motion Library Refactor
+
+Extracted all motion logic from the monolithic `move_to_cube.py` (~1000 lines) into a clean,
+importable library + thin CLI wrapper + YAML config.
+
+**What changed**:
+- **New**: `arm_controller.py` — `ArmController` class with public API: `pick()`, `place()`, `home()`, `move_to()`, `open_gripper()`, `close_gripper()`, `reset()`
+- **New**: `arm_cli.py` — thin CLI wrapper with subcommands (`arm pick blue_cube`, `arm place blue_cube 0.4 0.1`, etc.)
+- **New**: `config/objects.yaml` — single source of truth for object names, positions, dimensions, colors
+- **Refactored**: `scene_manager.py` — reads from `objects.yaml` instead of hardcoded methods
+- **Deleted**: `move_to_cube.py` — replaced by `arm_controller.py` + `arm_cli.py`
+- **Updated**: `setup.py` — new entry point `arm`, installs `config/*.yaml` to share dir
+
+**Key design decisions**:
+- **Generic naming**: No "cube" in API — `pick(object_name)` not `move_to_cube(cube_name)`. Object IDs match YAML keys (`blue_cube`, `red_cube`).
+- **YAML config**: Both `scene_manager` and `ArmController` read the same `objects.yaml`. Adding a new object = add YAML entry.
+- **`reset()` command**: Full nuclear recovery — detach all → remove all → open gripper → go home → re-add all at original YAML positions with colors.
+- **`home()` absorbs retry logic**: No longer in `main()` — `home()` handles detach + retry + re-add internally.
+- **`_cleanup_after_failed_place()`**: Extracted common cleanup pattern (detach → remove → open → re-add) into helper.
+
+**CLI syntax change**:
+```
+# Old: ros2 run robotic_arm_bringup move_to_cube --place blue --target-x 0.4 --target-y 0.1
+# New: ros2 run robotic_arm_bringup arm place blue_cube 0.4 0.1
+```
+
+**Rebuild required**: `colcon build --packages-select robotic_arm_bringup --symlink-install`
 
 ---
 
