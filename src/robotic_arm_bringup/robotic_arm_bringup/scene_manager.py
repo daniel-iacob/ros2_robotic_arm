@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Spawns scene objects from objects.yaml into the MoveIt planning scene."""
 
-import time
-
 import rclpy
 from geometry_msgs.msg import Pose
 from moveit_msgs.msg import CollisionObject, ObjectColor, PlanningScene
+from moveit_msgs.msg import PlanningSceneComponents
+from moveit_msgs.srv import ApplyPlanningScene, GetPlanningScene
 from rclpy.node import Node
 from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import ColorRGBA
@@ -16,11 +16,16 @@ from robotic_arm_bringup.arm_controller import load_objects_config
 class SceneManager(Node):
     def __init__(self):
         super().__init__("scene_manager")
-        self.pub = self.create_publisher(PlanningScene, "/planning_scene", 10)
-        self.get_logger().info("Waiting for MoveIt to initialize...")
-        time.sleep(5.0)
 
-    def spawn_object(self, name: str, cfg: dict):
+        self._apply_client = self.create_client(ApplyPlanningScene, "/apply_planning_scene")
+        self._get_client = self.create_client(GetPlanningScene, "/get_planning_scene")
+
+        self.get_logger().info("Waiting for MoveIt services...")
+        self._apply_client.wait_for_service(timeout_sec=30.0)
+        self._get_client.wait_for_service(timeout_sec=30.0)
+        self.get_logger().info("MoveIt services ready")
+
+    def _apply_object(self, name: str, cfg: dict) -> bool:
         obj = CollisionObject()
         obj.header.frame_id = "base_link"
         obj.id = name
@@ -50,21 +55,56 @@ class SceneManager(Node):
         scene_msg.world.collision_objects.append(obj)
         scene_msg.object_colors.append(color)
 
-        self.pub.publish(scene_msg)
-        self.get_logger().info(f"Published {name} to planning scene")
+        request = ApplyPlanningScene.Request()
+        request.scene = scene_msg
+        future = self._apply_client.call_async(request)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
+
+        if future.done() and future.result() is not None and future.result().success:
+            self.get_logger().info(f"Applied {name} to planning scene")
+            return True
+        else:
+            self.get_logger().error(f"Failed to apply {name}")
+            return False
+
+    def _verify_objects(self, expected_names: list) -> list:
+        """Return list of names that are missing from MoveIt scene."""
+        request = GetPlanningScene.Request()
+        request.components.components = PlanningSceneComponents.WORLD_OBJECT_GEOMETRY
+        future = self._get_client.call_async(request)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
+
+        if not future.done() or future.result() is None:
+            return expected_names  # assume all missing if we can't check
+
+        present = {obj.id for obj in future.result().scene.world.collision_objects}
+        return [name for name in expected_names if name not in present]
 
 
 def main():
     rclpy.init()
     node = SceneManager()
-
     objects = load_objects_config()
 
-    node.get_logger().info("Publishing objects to planning scene...")
-    for i in range(3):
-        for name, cfg in objects.items():
-            node.spawn_object(name, cfg)
-        time.sleep(0.5)
+    node.get_logger().info("Applying objects to planning scene...")
+    for name, cfg in objects.items():
+        node.get_logger().info(f"Adding {name}...")
+        node._apply_object(name, cfg)
+
+    # Verify all objects landed
+    missing = node._verify_objects(list(objects.keys()))
+    if missing:
+        node.get_logger().warn(f"Objects not confirmed in scene: {missing}. Retrying...")
+        for name in missing:
+            node._apply_object(name, objects[name])
+
+        missing = node._verify_objects(list(objects.keys()))
+        if missing:
+            node.get_logger().error(f"Failed to add objects after retry: {missing}")
+        else:
+            node.get_logger().info("All objects confirmed after retry")
+    else:
+        node.get_logger().info(f"All {len(objects)} objects confirmed in scene")
 
     node.get_logger().info("Scene setup complete!")
     rclpy.shutdown()

@@ -5,7 +5,9 @@ Provides a clean API for pick-and-place operations, motion control,
 and scene management. All object definitions come from objects.yaml.
 """
 
+import json
 import math
+import os
 import threading
 import time
 
@@ -33,6 +35,9 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import ColorRGBA
+
+
+_POSITION_CACHE = "/tmp/arm_object_positions.json"
 
 
 def load_objects_config():
@@ -156,6 +161,7 @@ class ArmController:
 
         # Attach before close — touch_links allow finger-object contact
         self._attach_object(object_name)
+        self._write_position_cache(object_name, pos[0], pos[1], pos[2])
         time.sleep(0.2)
 
         # Close gripper
@@ -210,6 +216,7 @@ class ArmController:
 
         # Step 5: Re-add object at release position with color
         self.update_object_position(object_name, x, y, release_z)
+        self._clear_position_cache(object_name)
 
         self.logger.info(f"Placed: {object_name}")
         return True
@@ -236,10 +243,12 @@ class ArmController:
         """Move end-effector to a Cartesian position."""
         success = self._move_to_position(x, y, z)
         if success:
-            # Update position of any attached object so place() knows where we are
+            # If carrying an object, persist its new world position to cache so the
+            # next CLI invocation (place) knows where to release it.
             for name in self.objects:
                 if self._is_object_attached(name):
                     self.objects[name] = (x, y, z)
+                    self._write_position_cache(name, x, y, z)
         return success
 
     def open_gripper(self) -> bool:
@@ -270,6 +279,7 @@ class ArmController:
         success = self._go_home()
 
         # Restore all objects at original YAML positions
+        self._clear_position_cache()
         for name, cfg in self._object_config.items():
             pos = cfg["position"]
             self.objects[name] = (pos[0], pos[1], pos[2])
@@ -279,13 +289,16 @@ class ArmController:
         return success
 
     def list_objects(self) -> bool:
-        """Query MoveIt planning scene and print all world collision objects."""
+        """Query MoveIt planning scene and print all world and attached collision objects."""
         if not self._get_scene_client.service_is_ready():
             self.logger.error("get_planning_scene service not available — is the sim running?")
             return False
 
         request = GetPlanningScene.Request()
-        request.components.components = PlanningSceneComponents.WORLD_OBJECT_GEOMETRY
+        request.components.components = (
+            PlanningSceneComponents.WORLD_OBJECT_GEOMETRY |
+            PlanningSceneComponents.ROBOT_STATE_ATTACHED_OBJECTS
+        )
 
         future = self._get_scene_client.call_async(request)
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=5.0)
@@ -294,17 +307,23 @@ class ArmController:
             self.logger.error("Failed to query planning scene")
             return False
 
-        objects = future.result().scene.world.collision_objects
-        if not objects:
+        scene = future.result().scene
+        world_objects = scene.world.collision_objects
+        attached_objects = scene.robot_state.attached_collision_objects
+
+        total = len(world_objects) + len(attached_objects)
+        if total == 0:
             self.logger.info("No objects in the planning scene")
             return True
 
-        self.logger.info(f"Objects in scene ({len(objects)}):")
-        for obj in objects:
+        self.logger.info(f"Objects in scene ({total}):")
+        for obj in world_objects:
             x = obj.pose.position.x + (obj.primitive_poses[0].position.x if obj.primitive_poses else 0)
             y = obj.pose.position.y + (obj.primitive_poses[0].position.y if obj.primitive_poses else 0)
             z = obj.pose.position.z + (obj.primitive_poses[0].position.z if obj.primitive_poses else 0)
             self.logger.info(f"  {obj.id}: ({x:.3f}, {y:.3f}, {z:.3f})")
+        for att in attached_objects:
+            self.logger.info(f"  {att.object.id}: (held)")
         return True
 
     def update_object_position(self, object_name: str, x: float, y: float, z: float) -> bool:
@@ -353,6 +372,35 @@ class ArmController:
 
     # ── Internal methods ──────────────────────────────────────────────
 
+    def _read_position_cache(self) -> dict:
+        """Read held-object positions from cache file (persists across CLI calls)."""
+        try:
+            with open(_POSITION_CACHE) as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+
+    def _write_position_cache(self, name: str, x: float, y: float, z: float):
+        """Persist a held object's world position to cache."""
+        cache = self._read_position_cache()
+        cache[name] = [x, y, z]
+        with open(_POSITION_CACHE, "w") as f:
+            json.dump(cache, f)
+
+    def _clear_position_cache(self, name: str = None):
+        """Remove one entry (or clear all) from the position cache."""
+        if name is None:
+            try:
+                os.remove(_POSITION_CACHE)
+            except FileNotFoundError:
+                pass
+            return
+        cache = self._read_position_cache()
+        if name in cache:
+            del cache[name]
+            with open(_POSITION_CACHE, "w") as f:
+                json.dump(cache, f)
+
     def _sync_object_positions(self):
         """Query MoveIt for actual object positions, overriding YAML defaults."""
         if not self._get_scene_client.service_is_ready():
@@ -360,7 +408,10 @@ class ArmController:
             return
 
         request = GetPlanningScene.Request()
-        request.components.components = PlanningSceneComponents.WORLD_OBJECT_GEOMETRY
+        request.components.components = (
+            PlanningSceneComponents.WORLD_OBJECT_GEOMETRY |
+            PlanningSceneComponents.ROBOT_STATE_ATTACHED_OBJECTS
+        )
 
         future = self._get_scene_client.call_async(request)
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=5.0)
@@ -371,6 +422,7 @@ class ArmController:
 
         scene = future.result().scene
         updated = 0
+
         for obj in scene.world.collision_objects:
             if obj.id in self.objects and obj.primitive_poses:
                 old = self.objects[obj.id]
@@ -384,6 +436,24 @@ class ArmController:
                     self.objects[obj.id] = new
                     self.logger.info(
                         f"Synced {obj.id}: ({old[0]:.3f},{old[1]:.3f},{old[2]:.3f}) → "
+                        f"({new[0]:.3f},{new[1]:.3f},{new[2]:.3f})"
+                    )
+                    updated += 1
+
+        # For attached objects, MoveIt stores poses in link frame (not base_link),
+        # so we use the position cache written by pick()/move_to() instead.
+        cache = self._read_position_cache()
+        for att in scene.robot_state.attached_collision_objects:
+            obj = att.object
+            if obj.id in self.objects and obj.id in cache:
+                old = self.objects[obj.id]
+                cached = cache[obj.id]
+                new = (cached[0], cached[1], cached[2])
+                if old != new:
+                    self.objects[obj.id] = new
+                    self.logger.info(
+                        f"Synced {obj.id} (held, from cache): "
+                        f"({old[0]:.3f},{old[1]:.3f},{old[2]:.3f}) → "
                         f"({new[0]:.3f},{new[1]:.3f},{new[2]:.3f})"
                     )
                     updated += 1
