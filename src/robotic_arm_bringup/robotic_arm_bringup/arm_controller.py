@@ -5,6 +5,7 @@ Provides a clean API for pick-and-place operations, motion control,
 and scene management. All object definitions come from objects.yaml.
 """
 
+import math
 import threading
 import time
 
@@ -166,64 +167,51 @@ class ArmController:
         self.logger.info(f"Pick completed: {object_name}")
         return True
 
-    def place(self, object_name: str, x: float, y: float, z: float = None) -> bool:
-        """Full pick-and-place: pick object, transport, release at (x, y, z)."""
-        # Defensive cleanup from prior failed invocation
-        self._detach_object(object_name)
+    def place(self, object_name: str, x: float = None, y: float = None, z: float = None) -> bool:
+        """Release object at specified position (or current if not specified).
+
+        Assumes object is already being held (picked via pick()).
+        If x, y, z not provided, uses the object's last known position.
+        Lowers Z by 0.05m before opening gripper.
+        """
+        if object_name not in self.objects:
+            self.logger.error(f"Unknown object: {object_name}")
+            return False
+
+        # If position not specified, use current object position (arm should be there with it attached)
+        if x is None or y is None:
+            current_pos = self.objects[object_name]
+            x, y = current_pos[0], current_pos[1]
 
         if z is None:
-            z = self.objects[object_name][2]
+            z = self.objects[object_name][2]  # Use original Z of object (where it sits)
 
-        self.logger.info(f"Place: moving {object_name} to ({x:.3f}, {y:.3f}, {z:.3f})")
+        release_z = z - 0.05  # Lower slightly before opening
 
-        # Step 1: Pick
-        if not self.pick(object_name):
-            self.logger.error("Failed to pick object")
-            return False
+        self.logger.info(f"Placing {object_name} at ({x:.3f}, {y:.3f}, {release_z:.3f})")
 
-        current_pos = self.objects[object_name]
-
-        # Step 2: Lift
-        lift_z = current_pos[2] + 0.1
-        if not self._move_to_position(current_pos[0], current_pos[1], lift_z):
-            self.logger.error("Failed to lift object")
-            self._cleanup_after_failed_place(object_name, current_pos)
-            return False
-
-        # Step 3: Move above target
-        if not self._move_to_position(x, y, z + 0.1):
-            self.logger.error("Failed to move to target approach")
-            self._cleanup_after_failed_place(object_name, current_pos)
-            return False
-
-        # Step 4: Lower to target (retry at higher Z if workspace limit)
-        placed_z = z
-        for attempt in range(3):
-            if self._move_to_position(x, y, placed_z):
-                if placed_z != z:
-                    self.logger.warning(
-                        f"Placed at Z={placed_z:.3f} (workspace limit; requested Z={z:.3f})"
-                    )
-                break
-            placed_z += 0.05
-            self.logger.warning(f"Target Z unreachable, retrying at Z={placed_z:.3f}")
-        else:
-            self.logger.error("Failed to lower to target at any reachable height")
-            self._cleanup_after_failed_place(object_name, current_pos)
-            return False
-
-        # Step 5: Release
+        # Step 1: Detach object from gripper
         self._detach_object(object_name)
         self._remove_object_from_scene(object_name)
+        time.sleep(0.2)
+
+        # Step 2: Lower slightly (Z - 0.05)
+        if not self._move_to_position(x, y, release_z):
+            self.logger.warning(f"Could not lower to Z={release_z:.3f}, opening at current position")
+
+        time.sleep(0.2)
+
+        # Step 3: Open gripper
         self.open_gripper()
+        time.sleep(0.5)
 
-        # Step 6: Lift away
-        self._move_to_position(x, y, placed_z + 0.1)
+        # Step 4: Move away (lift up Z + 0.15)
+        self._move_to_position(x, y, release_z + 0.15)
 
-        # Step 7: Re-add object at target with color
-        self.update_object_position(object_name, x, y, placed_z)
+        # Step 5: Re-add object at release position with color
+        self.update_object_position(object_name, x, y, release_z)
 
-        self.logger.info("Place completed successfully")
+        self.logger.info(f"Placed: {object_name}")
         return True
 
     def home(self) -> bool:
@@ -246,7 +234,13 @@ class ArmController:
 
     def move_to(self, x: float, y: float, z: float) -> bool:
         """Move end-effector to a Cartesian position."""
-        return self._move_to_position(x, y, z)
+        success = self._move_to_position(x, y, z)
+        if success:
+            # Update position of any attached object so place() knows where we are
+            for name in self.objects:
+                if self._is_object_attached(name):
+                    self.objects[name] = (x, y, z)
+        return success
 
     def open_gripper(self) -> bool:
         """Open gripper to fully open position."""
@@ -579,12 +573,13 @@ class ArmController:
         goal_constraints = Constraints()
         goal_constraints.position_constraints.append(pc)
 
-        # Joint constraint on joint_1 to prevent 180° flips
+        # Joint constraint on joint_1 biased toward natural angle for this XY target
+        expected_j1 = math.atan2(y, x)
         jc = JointConstraint()
         jc.joint_name = "joint_1"
-        jc.position = 0.0
-        jc.tolerance_above = 1.57
-        jc.tolerance_below = 1.57
+        jc.position = expected_j1
+        jc.tolerance_above = 0.5
+        jc.tolerance_below = 0.5
         jc.weight = 0.1
         goal_constraints.joint_constraints.append(jc)
 
@@ -722,6 +717,21 @@ class ArmController:
         self.logger.info(f"Detaching {object_name}...")
         result = self._apply_scene_sync(scene_msg)
         self.logger.info(f"Detached {object_name} (success={result})")
+
+    def _is_object_attached(self, object_name: str) -> bool:
+        """Check if an object is currently attached to the robot."""
+        if not self._get_scene_client.service_is_ready():
+            return False
+        request = GetPlanningScene.Request()
+        request.components.components = PlanningSceneComponents.ROBOT_STATE_ATTACHED_OBJECTS
+        future = self._get_scene_client.call_async(request)
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=2.0)
+        if not future.done() or future.result() is None:
+            return False
+        for obj in future.result().scene.robot_state.attached_collision_objects:
+            if obj.object.id == object_name:
+                return True
+        return False
 
     def _detach_all(self):
         for name in self.objects:

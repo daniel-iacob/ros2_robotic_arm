@@ -3,13 +3,13 @@
 
 Usage:
     ros2 run robotic_arm_bringup arm pick blue_cube
-    ros2 run robotic_arm_bringup arm place blue_cube 0.4 0.1
-    ros2 run robotic_arm_bringup arm place blue_cube 0.4 0.1 0.35
+    ros2 run robotic_arm_bringup arm move-to 0.4 0.1 0.3
+    ros2 run robotic_arm_bringup arm place blue_cube
     ros2 run robotic_arm_bringup arm home
     ros2 run robotic_arm_bringup arm open-gripper
     ros2 run robotic_arm_bringup arm close-gripper
     ros2 run robotic_arm_bringup arm reset
-    ros2 run robotic_arm_bringup arm move-to 0.5 0.0 0.4
+    ros2 run robotic_arm_bringup arm list-objects
 """
 
 import argparse
@@ -29,12 +29,9 @@ def main(args=None):
     p = sub.add_parser("pick", help="Pick up an object")
     p.add_argument("object", type=str, help="Object name (e.g. blue_cube)")
 
-    # place <object> <x> <y> [z]
-    p = sub.add_parser("place", help="Pick and place an object")
+    # place <object>
+    p = sub.add_parser("place", help="Release object at current position")
     p.add_argument("object", type=str, help="Object name")
-    p.add_argument("x", type=float, help="Target X position")
-    p.add_argument("y", type=float, help="Target Y position")
-    p.add_argument("z", type=float, nargs="?", default=None, help="Target Z position (default: same as source)")
 
     # home
     sub.add_parser("home", help="Return arm to home position")
@@ -70,7 +67,7 @@ def main(args=None):
         if parsed.command == "pick":
             success = controller.pick(parsed.object)
         elif parsed.command == "place":
-            success = controller.place(parsed.object, parsed.x, parsed.y, parsed.z)
+            success = controller.place(parsed.object)
         elif parsed.command == "home":
             success = controller.home()
         elif parsed.command == "open-gripper":
