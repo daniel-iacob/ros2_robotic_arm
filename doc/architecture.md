@@ -243,6 +243,6 @@ These constraints have caused bugs; remember them when making changes:
 
 6. **`colcon build` required (not `--symlink-install`) for non-Python files** — Python scripts with `--symlink-install` update without rebuild, but config files (YAML, URDF, SRDF) always need a full rebuild.
 
-7. **KDL IK workspace**: 3-DOF arm cannot reach all XYZ positions. Minimum reachable Z depends on XY radius. At radius ~0.36m (e.g. 0.2, 0.3), minimum Z ≈ 0.4. At radius ~0.41m (e.g. 0.4, 0.1), Z = 0.3 is reachable. `place()` auto-retries at Z+0.05 increments.
+7. **KDL IK workspace**: 3-DOF arm cannot reach all XYZ positions. Minimum reachable Z depends on XY radius. At radius ~0.36m (e.g. 0.2, 0.3), minimum Z ≈ 0.4. At radius ~0.41m (e.g. 0.4, 0.1), Z = 0.3 is reachable. `place()` auto-retries at Z+0.05 increments.MEMORY.md
 
 8. **`time.sleep()` does NOT spin the ROS2 executor** — topic publishes are queued but not delivered to MoveIt until the next `spin_once()` or `spin_until_future_complete()`. For planning scene updates that must be processed before the next motion, use the `/apply_planning_scene` service (synchronous), not the `/planning_scene` topic.
