@@ -118,8 +118,8 @@ class ArmController:
 
         # Planning parameters
         self.planning_time = 5.0
-        self.max_velocity_scaling = 0.1
-        self.max_acceleration_scaling = 0.1
+        self.max_velocity_scaling = 0.4
+        self.max_acceleration_scaling = 0.4
 
     # ── Public API ────────────────────────────────────────────────────
 
@@ -135,7 +135,7 @@ class ArmController:
 
         # Open gripper
         self.open_gripper()
-        time.sleep(1.0)
+        time.sleep(0.1)
 
         # Move to approach position (10cm above)
         if not self._move_to_position(pos[0], pos[1], pos[2] + 0.1):
@@ -146,13 +146,13 @@ class ArmController:
         if not self._move_to_position(pos[0], pos[1], pos[2] + 0.02, allowed_object=object_id):
             self.logger.error("Failed to approach for grasp")
             return False
-        time.sleep(0.5)
+        time.sleep(0.1)
 
         # Descend to object center
         if not self._move_to_position(pos[0], pos[1], pos[2], allowed_object=object_id):
             self.logger.error("Failed to reach grasp position")
             return False
-        time.sleep(0.5)
+        time.sleep(0.1)
 
         # Attach before close — touch_links allow finger-object contact
         self._attach_object(object_name)
@@ -160,7 +160,7 @@ class ArmController:
 
         # Close gripper
         self.close_gripper()
-        time.sleep(1.0)
+        time.sleep(0.1)
 
         # Lift
         self._move_to_position(pos[0], pos[1], pos[2] + 0.1)
@@ -193,17 +193,17 @@ class ArmController:
         # Step 1: Detach object from gripper
         self._detach_object(object_name)
         self._remove_object_from_scene(object_name)
-        time.sleep(0.2)
+        time.sleep(0.1)
 
         # Step 2: Lower slightly (Z - 0.05)
         if not self._move_to_position(x, y, release_z):
             self.logger.warning(f"Could not lower to Z={release_z:.3f}, opening at current position")
 
-        time.sleep(0.2)
+        time.sleep(0.1)
 
         # Step 3: Open gripper
         self.open_gripper()
-        time.sleep(0.5)
+        time.sleep(0.1)
 
         # Step 4: Move away (lift up Z + 0.15)
         self._move_to_position(x, y, release_z + 0.15)
@@ -604,8 +604,8 @@ class ArmController:
         goal_msg.request.group_name = "gripper_group"
         goal_msg.request.num_planning_attempts = 5
         goal_msg.request.allowed_planning_time = 2.0
-        goal_msg.request.max_velocity_scaling_factor = 0.1
-        goal_msg.request.max_acceleration_scaling_factor = 0.1
+        goal_msg.request.max_velocity_scaling_factor = 0.4
+        goal_msg.request.max_acceleration_scaling_factor = 0.4
         goal_msg.request.start_state = self._get_current_robot_state()
 
         jc = JointConstraint()
