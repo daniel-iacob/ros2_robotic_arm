@@ -16,6 +16,10 @@ setup(
             os.path.join("share", package_name, "launch"),
             glob.glob(os.path.join("launch", "*.launch.py")),
         ),
+        (
+            os.path.join("share", package_name, "config"),
+            glob.glob(os.path.join("config", "*.yaml")),
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -31,7 +35,7 @@ setup(
     entry_points={
         "console_scripts": [
             "scene_manager = robotic_arm_bringup.scene_manager:main",
-            "move_to_cube = robotic_arm_bringup.move_to_cube:main",
+            "arm = robotic_arm_bringup.arm_cli:main",
         ],
     },
 )
