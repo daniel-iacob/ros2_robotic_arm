@@ -350,9 +350,13 @@ class ArmController:
         updated = 0
         for obj in scene.world.collision_objects:
             if obj.id in self.objects and obj.primitive_poses:
-                pose = obj.primitive_poses[0]
                 old = self.objects[obj.id]
-                new = (pose.position.x, pose.position.y, pose.position.z)
+                # MoveIt normalizes: world pos → obj.pose, primitive offset → primitive_poses[0]
+                # Sum both to handle either storage convention
+                x = obj.pose.position.x + obj.primitive_poses[0].position.x
+                y = obj.pose.position.y + obj.primitive_poses[0].position.y
+                z = obj.pose.position.z + obj.primitive_poses[0].position.z
+                new = (x, y, z)
                 if old != new:
                     self.objects[obj.id] = new
                     self.logger.info(
@@ -469,6 +473,16 @@ class ArmController:
             return True
         else:
             self.logger.error(f"Motion failed with error: {code_str}")
+            msg = getattr(result.error_code, "message", "")
+            src = getattr(result.error_code, "source", "")
+            if msg:
+                self.logger.error(f"MoveIt reason: {msg}" + (f" (from: {src})" if src else ""))
+            if not msg and code in (99999, -1, -31):
+                self.logger.error(
+                    "Hint: the target position may be outside the arm's reachable workspace. "
+                    "Max reach is ~0.78m from the base (upper arm 0.4m + forearm 0.3m + gripper 0.08m). "
+                    "Keep sqrt(x²+y²) < 0.7m and z between 0.1–0.8m."
+                )
             return False
 
     def _move_to_joints(self, joint_positions: list) -> bool:
