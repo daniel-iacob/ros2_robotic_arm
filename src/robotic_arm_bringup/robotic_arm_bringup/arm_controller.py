@@ -284,6 +284,35 @@ class ArmController:
         self.logger.info(f"Reset {'completed' if success else 'failed (arm did not reach home)'}")
         return success
 
+    def list_objects(self) -> bool:
+        """Query MoveIt planning scene and print all world collision objects."""
+        if not self._get_scene_client.service_is_ready():
+            self.logger.error("get_planning_scene service not available — is the sim running?")
+            return False
+
+        request = GetPlanningScene.Request()
+        request.components.components = PlanningSceneComponents.WORLD_OBJECT_GEOMETRY
+
+        future = self._get_scene_client.call_async(request)
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=5.0)
+
+        if not future.done() or future.result() is None:
+            self.logger.error("Failed to query planning scene")
+            return False
+
+        objects = future.result().scene.world.collision_objects
+        if not objects:
+            self.logger.info("No objects in the planning scene")
+            return True
+
+        self.logger.info(f"Objects in scene ({len(objects)}):")
+        for obj in objects:
+            x = obj.pose.position.x + (obj.primitive_poses[0].position.x if obj.primitive_poses else 0)
+            y = obj.pose.position.y + (obj.primitive_poses[0].position.y if obj.primitive_poses else 0)
+            z = obj.pose.position.z + (obj.primitive_poses[0].position.z if obj.primitive_poses else 0)
+            self.logger.info(f"  {obj.id}: ({x:.3f}, {y:.3f}, {z:.3f})")
+        return True
+
     def update_object_position(self, object_name: str, x: float, y: float, z: float) -> bool:
         """Re-add object to planning scene at new position with correct color."""
         if object_name not in self._object_config:

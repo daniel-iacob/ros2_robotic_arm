@@ -16,6 +16,7 @@ usage() {
     echo -e "  ${GREEN}open-gripper${NC}                  Open gripper"
     echo -e "  ${GREEN}close-gripper${NC}                 Close gripper"
     echo -e "  ${GREEN}reset${NC}                         Full recovery: home + reset scene"
+    echo -e "  ${GREEN}list-objects${NC}                  List objects in the MoveIt scene"
     echo ""
     echo -e "Examples:"
     echo -e "  ./robotic_arm.sh pick blue_cube"

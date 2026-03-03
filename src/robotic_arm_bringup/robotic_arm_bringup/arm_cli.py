@@ -48,6 +48,9 @@ def main(args=None):
     # reset
     sub.add_parser("reset", help="Full recovery: home + reset scene to original state")
 
+    # list-objects
+    sub.add_parser("list-objects", help="List all objects currently in the MoveIt planning scene")
+
     # move-to <x> <y> <z>
     p = sub.add_parser("move-to", help="Move end-effector to position")
     p.add_argument("x", type=float, help="X position")
@@ -76,6 +79,8 @@ def main(args=None):
             success = controller.close_gripper()
         elif parsed.command == "reset":
             success = controller.reset()
+        elif parsed.command == "list-objects":
+            success = controller.list_objects()
         elif parsed.command == "move-to":
             success = controller.move_to(parsed.x, parsed.y, parsed.z)
 
