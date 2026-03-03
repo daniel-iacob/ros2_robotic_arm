@@ -1,6 +1,48 @@
 # Changelog — ROS2 Robotic Arm
 
 Historical session notes. For current project status, see [CLAUDE.md](../CLAUDE.md).
+Compact patterns and constraints live in [doc/MEMORY.md](MEMORY.md).
+Architecture and design decisions live in [doc/architecture.md](architecture.md).
+
+---
+
+## Session 2026-03-03
+
+### place releases at wrong position after move-to
+
+**Root cause**: `AttachedCollisionObject` pose is in the attach link's frame (`grasp_link`), not `base_link`. Reading `obj.pose.position` from MoveIt for an attached object gives near-zero values — the object's offset relative to the gripper, not its world position. Re-attaching with the Cartesian target coordinates also didn't help since those values were written into a link-relative field.
+
+**Fix**: `/tmp/arm_object_positions.json` — a small JSON cache that persists held object world positions across CLI invocations (each CLI call is a separate Python process).
+- `pick()` writes `{name: [x, y, z]}` at pick position
+- `move_to()` overwrites the entry with the new position when carrying an object
+- `place()` removes the entry after releasing
+- `reset()` removes the entire file
+- `_sync_object_positions()` reads the cache for attached objects at startup (instead of broken MoveIt link-relative pose)
+
+### KDL IK symmetry — INVALID_MOTION_PLAN for red_cube
+
+**Root cause**: KDL IK solver finds two valid solutions for targets where `x ≈ 0` (e.g. red_cube at `(0, 0.5, 0.3)`): `joint_1 = +π/2` and `joint_1 = -π/2`. The mirrored solution produces a ~39-second trajectory that the controller rejects as INVALID_MOTION_PLAN.
+
+**Fix**: Add a `JointConstraint` on `joint_1` biased to `math.atan2(y, x)` (the natural shoulder angle for the XY target) with `±0.5` tolerance and `weight=0.1`. This doesn't do IK — it sets a preference target that guides KDL to the natural solution without overconstraining.
+
+### scene_manager dropped objects on startup
+
+**Root cause**: Used `/planning_scene` topic + `time.sleep(5)`. `time.sleep()` doesn't spin the ROS2 executor, so published messages were queued but never delivered to MoveIt before the process exited.
+
+**Fix**: Rewrote `scene_manager.py` to use `/apply_planning_scene` service (synchronous) with a verification step: after applying, queries `/get_planning_scene` to confirm all objects landed, retries missing ones once.
+
+### list-objects not showing held objects
+
+**Root cause**: `GetPlanningScene` was only querying `WORLD_OBJECT_GEOMETRY`. Attached objects live in `ROBOT_STATE_ATTACHED_OBJECTS`.
+
+**Fix**: Query both flags in one request (`WORLD_OBJECT_GEOMETRY | ROBOT_STATE_ATTACHED_OBJECTS`). World objects print with position; attached objects print as `(held)`.
+
+### New commands / improvements
+
+- `list-objects` subcommand added to CLI + `robotic_arm.sh`
+- `robotic_arm.sh` shell wrapper — shows help with no args, forwards all commands to `ros2 run robotic_arm_bringup arm`
+- Speed raised: `max_velocity_scaling` and `max_acceleration_scaling` `0.1 → 0.4`
+- `MEMORY.md` moved from repo root to `doc/MEMORY.md`
 
 ---
 

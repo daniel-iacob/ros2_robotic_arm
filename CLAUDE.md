@@ -14,18 +14,19 @@ Learn ROS2 concepts with a simulated robotic arm + gripper + camera → eventual
 
 Keep the **Latest Session Changes** section current: add a new dated entry at the top for each session with meaningful changes, summarizing what was done and why.
 
-**Also read and update [`doc/architecture.md`](doc/architecture.md)** when you:
-- Add or remove ROS2 nodes, topics, or actions
-- Make a significant architectural or design decision
-- Change the phase roadmap
-- Discover a new MoveIt/ROS2 constraint
+**Also read and update these `doc/` companion files**:
+- **[`doc/MEMORY.md`](doc/MEMORY.md)** — compact patterns and constraints (update when you learn something new about MoveIt/ROS2 behavior, or when a previously documented pattern is corrected)
+- **[`doc/architecture.md`](doc/architecture.md)** — update when adding/removing nodes, topics, actions, or making architectural decisions
+- **[`doc/CHANGELOG.md`](doc/CHANGELOG.md)** — move session notes here at the end of each session (keep Latest Session Changes in CLAUDE.md, archive older ones to CHANGELOG.md)
 
 ---
 
 ## Quick Reference for Claude
 
 > Read this first. It gives you enough context to start working without parsing the whole file.
-> Also read **[`MEMORY.md`](MEMORY.md)** — compact accumulated patterns and constraints.
+> Also read **[`doc/MEMORY.md`](doc/MEMORY.md)** — compact accumulated patterns and constraints.
+> Historical session notes live in **[`doc/CHANGELOG.md`](doc/CHANGELOG.md)**.
+> Architecture diagrams and design decisions live in **[`doc/architecture.md`](doc/architecture.md)**.
 
 **What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Goal: eventually LLM-controlled manipulation. Currently Phase 2 — importable motion library + CLI with MoveIt2 mock hardware. No Gazebo, no camera, no LLM yet.
 
@@ -214,27 +215,31 @@ controller.reset()
 
 ## Latest Session Changes (2026-03-03)
 
-### Added shell wrapper + list-objects command
+### Bug fixes, new commands, and documentation reorganisation
 
-**New**: `robotic_arm.sh` — simplified CLI entry point that shows help with no args and forwards all commands to `ros2 run robotic_arm_bringup arm ...`. Makes the CLI more discoverable.
+**New**: `robotic_arm.sh` — simplified shell entry point; shows help with no args, forwards all commands to `ros2 run robotic_arm_bringup arm ...`.
 
-**New**: `list-objects` subcommand — queries live MoveIt planning scene and prints all world collision objects with their current positions. Useful for debugging object state across CLI invocations.
+**New**: `list-objects` subcommand — queries live MoveIt planning scene for both world and attached objects. World objects print with position; held objects print as `(held)`.
 
-**New**: Improved error messages — MoveIt error code failures now log the `error_code.message` field (e.g. "No IK solution found") when available. Falls back to workspace hints for generic failures.
+**New**: `_is_object_attached()` helper — queries `ROBOT_STATE_ATTACHED_OBJECTS` from MoveIt to check if an object is currently held.
 
-**Files modified**:
-- New: `robotic_arm.sh` — shell wrapper
-- `src/robotic_arm_bringup/robotic_arm_bringup/arm_controller.py`:
-  - Added `list_objects()` method (queries `/get_planning_scene` service)
-  - Enhanced `_send_move_goal()` error logging with MoveIt message + workspace hints
-- `src/robotic_arm_bringup/robotic_arm_bringup/arm_cli.py`:
-  - Added `list-objects` subcommand + dispatch
-- `robotic_arm.sh`:
-  - Updated usage to show `list-objects` command
+**Fix: `place` releasing at original pick position instead of `move-to` destination**
+- Root cause: `AttachedCollisionObject` pose is stored in `grasp_link` frame, not `base_link`. Reading it back gave near-zero values. Re-attaching with the Cartesian target also wrote link-relative data.
+- Fix: `/tmp/arm_object_positions.json` cache persists held object world positions across CLI invocations. `pick()` writes it; `move_to()` updates it; `place()` clears the entry; `reset()` clears all. `_sync_object_positions()` reads the cache for attached objects at startup.
 
-**Documentation cleanup**:
-- Moved all session logs from 2026-02-18 to 2026-02-25 to `doc/CHANGELOG.md`
-- Trimmed `CLAUDE.md` to ~150 lines (latest session only, no history)
-- History preserved in `doc/CHANGELOG.md` for reference
+**Fix: KDL IK symmetry for red_cube at `(0, 0.5, 0.3)`**
+- Root cause: KDL found `joint_1 = -π/2` (mirrored) → 39s trajectory → INVALID_MOTION_PLAN.
+- Fix: `JointConstraint` on `joint_1` biased to `math.atan2(y, x)` with `±0.5` tolerance, weight `0.1`.
+
+**Fix: `scene_manager` dropping objects on startup**
+- Root cause: topic + `time.sleep()` — `time.sleep()` doesn't spin executor, messages dropped.
+- Fix: Rewrote to use `/apply_planning_scene` service with verification + one retry.
+
+**Fix: `list-objects` not showing held objects**
+- Query both `WORLD_OBJECT_GEOMETRY | ROBOT_STATE_ATTACHED_OBJECTS` in one request.
+
+**Speed**: `max_velocity_scaling` and `max_acceleration_scaling` raised from `0.1` → `0.4`.
+
+**Docs**: Moved `MEMORY.md` from repo root to `doc/MEMORY.md`. Updated CLAUDE.md to reference all three `doc/` companion files.
 
 **No rebuild required** — Python-only changes.
