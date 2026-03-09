@@ -11,6 +11,7 @@ Patterns and constraints: [MEMORY.md](MEMORY.md). Architecture: [architecture.md
 - CLI rewritten as thin action client — no longer creates `ArmController` directly
 - Added `on_progress` callback to `pick()`, `place()`, `reset()` for step-by-step feedback
 - `place` CLI now accepts optional `x y [z]` position args (was missing before)
+- **Fix: executor deadlock** — `ArmController` called `rclpy.spin_until_future_complete()` on a node already being spun by `MultiThreadedExecutor` → deadlock. Solution: `_wait_for_future()` polls when executor is active, spins when standalone
 - Condensed CLAUDE.md and CHANGELOG.md — focus on why, not how
 
 ## 2026-03-03
