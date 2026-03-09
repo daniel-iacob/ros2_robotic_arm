@@ -69,6 +69,7 @@ These have caused bugs. Always remember them.
 | Attach cube with `touch_links` BEFORE `close_gripper()` | Error 99999 (per-plan ACM doesn't work for gripper group) |
 | Use `/apply_planning_scene` service (not topic) for attach/detach | `time.sleep()` doesn't spin executor → race condition |
 | Mimic joints: no command interface in ros2_control | ros2_control crash on startup |
+| Never call `spin_until_future_complete` on a node with an active executor | Deadlock — use `_wait_for_future()` instead |
 
 ---
 
