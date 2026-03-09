@@ -5,9 +5,13 @@ Patterns and constraints: [MEMORY.md](MEMORY.md). Architecture: [architecture.md
 
 ---
 
-## 2026-03-09
-- Fixed CLAUDE.md: `place` CLI docs showed position args that aren't wired up
-- Condensed CLAUDE.md (~150 lines) and CHANGELOG.md — focus on why, not how
+## 2026-03-09 — Phase 3: Motion Action Server
+- **Phase 3 complete**: persistent `motion_server` node with 7 actions + 1 service
+- New `robotic_arm_interfaces` package for `.action`/`.srv`/`.msg` definitions
+- CLI rewritten as thin action client — no longer creates `ArmController` directly
+- Added `on_progress` callback to `pick()`, `place()`, `reset()` for step-by-step feedback
+- `place` CLI now accepts optional `x y [z]` position args (was missing before)
+- Condensed CLAUDE.md and CHANGELOG.md — focus on why, not how
 
 ## 2026-03-03
 - Added `list-objects` command (queries MoveIt for world + attached objects)

@@ -35,6 +35,7 @@ setup(
     entry_points={
         "console_scripts": [
             "scene_manager = robotic_arm_bringup.scene_manager:main",
+            "motion_server = robotic_arm_bringup.motion_server:main",
             "arm = robotic_arm_bringup.arm_cli:main",
         ],
     },

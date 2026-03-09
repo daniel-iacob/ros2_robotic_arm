@@ -40,6 +40,27 @@ from std_msgs.msg import ColorRGBA
 _POSITION_CACHE = "/tmp/arm_object_positions.json"
 
 
+def _wait_for_future(node, future, timeout_sec):
+    """Wait for a future to complete. Works whether or not an executor is spinning.
+
+    When called from within an executor callback (e.g., motion_server), the executor
+    is already spinning so we just poll the future. When called standalone (e.g., old
+    CLI mode), we need to spin the node ourselves.
+    """
+    # Check if an executor is already spinning this node
+    if node.executor is not None:
+        # Executor is spinning — just wait without trying to spin again
+        import time as _time
+        start = _time.monotonic()
+        while not future.done():
+            if _time.monotonic() - start > timeout_sec:
+                return
+            _time.sleep(0.01)
+    else:
+        # No executor — spin the node ourselves (standalone mode)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=timeout_sec)
+
+
 def load_objects_config():
     """Load object definitions from objects.yaml in the package share directory."""
     share_dir = get_package_share_directory("robotic_arm_bringup")
@@ -114,7 +135,12 @@ class ArmController:
         self._joint_state_sub = node.create_subscription(
             JointState, "/joint_states", self._joint_state_callback, 10
         )
-        rclpy.spin_once(node, timeout_sec=0.5)
+        # Wait for initial joint state — if executor is spinning, just sleep;
+        # otherwise spin_once to process the callback
+        if node.executor is not None:
+            time.sleep(0.5)
+        else:
+            rclpy.spin_once(node, timeout_sec=0.5)
 
         self._log_diagnostics()
 
@@ -128,26 +154,37 @@ class ArmController:
 
     # ── Public API ────────────────────────────────────────────────────
 
-    def pick(self, object_name: str) -> bool:
-        """Open gripper, approach object, descend, attach, close gripper, lift."""
+    def pick(self, object_name: str, on_progress=None) -> bool:
+        """Open gripper, approach object, descend, attach, close gripper, lift.
+
+        Args:
+            on_progress: Optional callback(step: str, progress: float) for reporting progress.
+        """
         if object_name not in self.objects:
             self.logger.error(f"Unknown object: {object_name}. Available: {list(self.objects.keys())}")
             return False
+
+        def _report(step, progress):
+            if on_progress:
+                on_progress(step, progress)
 
         pos = self.objects[object_name]
         object_id = object_name
         self.logger.info(f"Picking {object_name} at ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f})")
 
         # Open gripper
+        _report("opening gripper", 0.0)
         self.open_gripper()
         time.sleep(0.1)
 
         # Move to approach position (10cm above)
+        _report("approaching object", 0.17)
         if not self._move_to_position(pos[0], pos[1], pos[2] + 0.1):
             self.logger.error("Failed to move to approach position")
             return False
 
         # Descend to 2cm above (ACM allows passing through object)
+        _report("descending to grasp", 0.33)
         if not self._move_to_position(pos[0], pos[1], pos[2] + 0.02, allowed_object=object_id):
             self.logger.error("Failed to approach for grasp")
             return False
@@ -160,6 +197,7 @@ class ArmController:
         time.sleep(0.1)
 
         # Attach before close — touch_links allow finger-object contact
+        _report("attaching and closing gripper", 0.50)
         self._attach_object(object_name)
         self._write_position_cache(object_name, pos[0], pos[1], pos[2])
         time.sleep(0.2)
@@ -169,20 +207,29 @@ class ArmController:
         time.sleep(0.1)
 
         # Lift
+        _report("lifting", 0.83)
         self._move_to_position(pos[0], pos[1], pos[2] + 0.1)
         self.logger.info(f"Pick completed: {object_name}")
         return True
 
-    def place(self, object_name: str, x: float = None, y: float = None, z: float = None) -> bool:
+    def place(self, object_name: str, x: float = None, y: float = None, z: float = None,
+              on_progress=None) -> bool:
         """Release object at specified position (or current if not specified).
 
         Assumes object is already being held (picked via pick()).
         If x, y, z not provided, uses the object's last known position.
         Lowers Z by 0.05m before opening gripper.
+
+        Args:
+            on_progress: Optional callback(step: str, progress: float) for reporting progress.
         """
         if object_name not in self.objects:
             self.logger.error(f"Unknown object: {object_name}")
             return False
+
+        def _report(step, progress):
+            if on_progress:
+                on_progress(step, progress)
 
         # If position not specified, use current object position (arm should be there with it attached)
         if x is None or y is None:
@@ -197,24 +244,29 @@ class ArmController:
         self.logger.info(f"Placing {object_name} at ({x:.3f}, {y:.3f}, {release_z:.3f})")
 
         # Step 1: Detach object from gripper
+        _report("detaching object", 0.0)
         self._detach_object(object_name)
         self._remove_object_from_scene(object_name)
         time.sleep(0.1)
 
         # Step 2: Lower slightly (Z - 0.05)
+        _report("lowering to release position", 0.20)
         if not self._move_to_position(x, y, release_z):
             self.logger.warning(f"Could not lower to Z={release_z:.3f}, opening at current position")
 
         time.sleep(0.1)
 
         # Step 3: Open gripper
+        _report("opening gripper", 0.40)
         self.open_gripper()
         time.sleep(0.1)
 
         # Step 4: Move away (lift up Z + 0.15)
+        _report("lifting away", 0.60)
         self._move_to_position(x, y, release_z + 0.15)
 
         # Step 5: Re-add object at release position with color
+        _report("updating scene", 0.80)
         self.update_object_position(object_name, x, y, release_z)
         self._clear_position_cache(object_name)
 
@@ -261,24 +313,37 @@ class ArmController:
         self.logger.info("Closing gripper...")
         return self._move_gripper(-0.04)
 
-    def reset(self) -> bool:
-        """Full recovery: detach all, clear scene, open gripper, go home, re-add all objects."""
+    def reset(self, on_progress=None) -> bool:
+        """Full recovery: detach all, clear scene, open gripper, go home, re-add all objects.
+
+        Args:
+            on_progress: Optional callback(step: str, progress: float) for reporting progress.
+        """
         self.logger.info("Resetting arm and scene...")
 
+        def _report(step, progress):
+            if on_progress:
+                on_progress(step, progress)
+
         # Detach everything
+        _report("detaching all objects", 0.0)
         self._detach_all()
 
         # Remove all objects from world scene
+        _report("clearing scene", 0.20)
         for name in list(self.objects.keys()):
             self._remove_object_from_scene(name)
 
         # Open gripper (nothing in the way now)
+        _report("opening gripper", 0.40)
         self.open_gripper()
 
         # Go home
+        _report("moving to home", 0.60)
         success = self._go_home()
 
         # Restore all objects at original YAML positions
+        _report("restoring objects", 0.80)
         self._clear_position_cache()
         for name, cfg in self._object_config.items():
             pos = cfg["position"]
@@ -301,7 +366,7 @@ class ArmController:
         )
 
         future = self._get_scene_client.call_async(request)
-        rclpy.spin_until_future_complete(self.node, future, timeout_sec=5.0)
+        _wait_for_future(self.node, future, timeout_sec=5.0)
 
         if not future.done() or future.result() is None:
             self.logger.error("Failed to query planning scene")
@@ -414,7 +479,7 @@ class ArmController:
         )
 
         future = self._get_scene_client.call_async(request)
-        rclpy.spin_until_future_complete(self.node, future, timeout_sec=5.0)
+        _wait_for_future(self.node, future, timeout_sec=5.0)
 
         if not future.done() or future.result() is None:
             self.logger.warn("Failed to query planning scene, using YAML positions")
@@ -509,7 +574,7 @@ class ArmController:
 
     def _send_move_goal(self, goal_msg: MoveGroup.Goal) -> bool:
         send_goal_future = self._move_group_client.send_goal_async(goal_msg)
-        rclpy.spin_until_future_complete(self.node, send_goal_future, timeout_sec=5.0)
+        _wait_for_future(self.node, send_goal_future, timeout_sec=5.0)
 
         if not send_goal_future.done():
             self.logger.error("Failed to send goal (timeout)")
@@ -523,7 +588,7 @@ class ArmController:
         self.logger.info("Goal accepted, waiting for result...")
 
         result_future = goal_handle.get_result_async()
-        rclpy.spin_until_future_complete(self.node, result_future, timeout_sec=30.0)
+        _wait_for_future(self.node, result_future, timeout_sec=30.0)
 
         if not result_future.done():
             self.logger.error("Motion execution timeout (>30s)")
@@ -700,7 +765,7 @@ class ArmController:
         goal_msg.planning_options.replan = False
 
         send_goal_future = self._move_group_client.send_goal_async(goal_msg)
-        rclpy.spin_until_future_complete(self.node, send_goal_future, timeout_sec=5.0)
+        _wait_for_future(self.node, send_goal_future, timeout_sec=5.0)
 
         if not send_goal_future.done():
             self.logger.error("Failed to send gripper goal")
@@ -712,7 +777,7 @@ class ArmController:
             return False
 
         result_future = goal_handle.get_result_async()
-        rclpy.spin_until_future_complete(self.node, result_future, timeout_sec=10.0)
+        _wait_for_future(self.node, result_future, timeout_sec=10.0)
 
         if not result_future.done():
             self.logger.error("Gripper motion timeout")
@@ -795,7 +860,7 @@ class ArmController:
         request = GetPlanningScene.Request()
         request.components.components = PlanningSceneComponents.ROBOT_STATE_ATTACHED_OBJECTS
         future = self._get_scene_client.call_async(request)
-        rclpy.spin_until_future_complete(self.node, future, timeout_sec=2.0)
+        _wait_for_future(self.node, future, timeout_sec=2.0)
         if not future.done() or future.result() is None:
             return False
         for obj in future.result().scene.robot_state.attached_collision_objects:
@@ -826,7 +891,7 @@ class ArmController:
             request = ApplyPlanningScene.Request()
             request.scene = scene_msg
             future = self._apply_scene_client.call_async(request)
-            rclpy.spin_until_future_complete(self.node, future, timeout_sec=5.0)
+            _wait_for_future(self.node, future, timeout_sec=5.0)
             if future.done() and future.result() is not None:
                 return future.result().success
             self.logger.warn("apply_planning_scene service call timed out or failed")

@@ -24,24 +24,29 @@ Learn ROS2 concepts with a simulated robotic arm + gripper + camera → eventual
 
 ## Quick Reference
 
-**What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Phase 2 — importable motion library + CLI with MoveIt2 mock hardware. No Gazebo, no camera, no LLM yet.
+**What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Phase 3 — persistent action server + CLI client with MoveIt2 mock hardware. No Gazebo, no camera, no LLM yet.
 
 **Quick start**: `./run.sh sim` → launches RViz + MoveIt
 
 **Running nodes** (after `./run.sh sim`):
+- `motion_server` — persistent action server, holds `ArmController` in memory
 - `scene_manager` — one-shot, spawns objects from `objects.yaml` into MoveIt
 - `move_group` — MoveIt2 planning server
 - `arm_controller` / `gripper_controller` / `joint_state_broadcaster` — ros2_control
 - `robot_state_publisher` + `rviz2`
 
 **Entry points**:
-- CLI: `ros2 run robotic_arm_bringup arm <command> [args]`
+- CLI: `ros2 run robotic_arm_bringup arm <command> [args]` (thin action client)
+- Actions: `/pick`, `/place`, `/move_to`, `/home`, `/reset`, `/open_gripper`, `/close_gripper`
+- Service: `/list_objects`
 - Python: `from robotic_arm_bringup.arm_controller import ArmController`
 
 **Key files**:
 - Robot model: `src/robotic_arm_description/urdf/robotic_arm.urdf.xacro`
 - Motion library: `src/robotic_arm_bringup/robotic_arm_bringup/arm_controller.py`
-- CLI wrapper: `src/robotic_arm_bringup/robotic_arm_bringup/arm_cli.py`
+- Action server: `src/robotic_arm_bringup/robotic_arm_bringup/motion_server.py`
+- CLI client: `src/robotic_arm_bringup/robotic_arm_bringup/arm_cli.py`
+- Action/service definitions: `src/robotic_arm_interfaces/`
 - Object definitions: `src/robotic_arm_bringup/config/objects.yaml`
 - Scene setup: `src/robotic_arm_bringup/robotic_arm_bringup/scene_manager.py`
 - MoveIt config: `src/robotic_arm_moveit_config/`
@@ -71,10 +76,12 @@ These have caused bugs. Always remember them.
 
 - ✓ Arm + gripper URDF with MoveIt2 + KDL IK
 - ✓ RViz visualization with colored collision objects
-- ✓ Importable `ArmController` library + thin CLI
+- ✓ Importable `ArmController` library
+- ✓ Persistent `motion_server` action server (7 actions + 1 service)
+- ✓ Thin CLI client (sends goals to `motion_server`)
 - ✓ Pick-and-place with planning scene updates
+- ✓ `place` CLI accepts optional target position args
 - ✓ YAML-based object config (`objects.yaml`)
-- ✗ CLI `place` doesn't accept target position args (use `move-to` then `place`)
 - ✗ Camera / vision (Phase 4)
 - ✗ LLM integration (Phase 5)
 
@@ -82,7 +89,7 @@ These have caused bugs. Always remember them.
 
 - [x] **Phase 1** — CLI motion control, MoveIt2 integration, pick-and-place
 - [x] **Phase 2** — Importable `ArmController` library + YAML config + thin CLI
-- [ ] **Phase 3** — Persistent ROS2 action server (replaces one-shot CLI)
+- [x] **Phase 3** — Persistent `motion_server` action server + CLI as action client
 - [ ] **Phase 4** — Camera + vision-based object detection
 - [ ] **Phase 5** — LLM interface for natural language control
 
@@ -95,13 +102,10 @@ These have caused bugs. Always remember them.
 
 ## Latest Session Changes (2026-03-09)
 
-- Fixed CLAUDE.md: `place` CLI docs incorrectly showed position args (not wired up)
-- Condensed CLAUDE.md and CHANGELOG.md — removed implementation details, focused on why
-
-## Previous Session (2026-03-03)
-
-- Added `list-objects` command and `robotic_arm.sh` wrapper
-- Fixed `place` releasing at pick position (not move-to destination) — position cache
-- Fixed KDL IK symmetry for targets near x=0 — joint_1 bias constraint
-- Fixed `scene_manager` dropping objects — service instead of topic
-- Speed: velocity/acceleration scaling 0.1 → 0.4
+- **Phase 3**: Added persistent `motion_server` node with 7 ROS2 actions + 1 service
+- New `robotic_arm_interfaces` package with `.action` and `.srv` definitions
+- CLI rewritten as thin action client (no longer creates `ArmController` directly)
+- Added `on_progress` callback to `pick()`, `place()`, `reset()` for action feedback
+- `place` CLI now accepts optional `x y [z]` position args
+- `motion_server` launches automatically with `./run.sh sim`
+- Condensed CLAUDE.md and CHANGELOG.md — focus on why, not how
