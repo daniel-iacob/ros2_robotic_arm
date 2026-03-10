@@ -5,6 +5,11 @@ Patterns and constraints: [MEMORY.md](MEMORY.md). Architecture: [architecture.md
 
 ---
 
+## 2026-03-10 — Integration test suite
+- Added `./run.sh tests` — pytest-based system tests that run CLI commands against a live sim
+
+---
+
 ## 2026-03-09 — Phase 3: Motion Action Server
 - **Phase 3 complete**: persistent `motion_server` node with 7 actions + 1 service
 - New `robotic_arm_interfaces` package for `.action`/`.srv`/`.msg` definitions

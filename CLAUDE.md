@@ -26,7 +26,7 @@ Learn ROS2 concepts with a simulated robotic arm + gripper + camera → eventual
 
 **What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Phase 3 — persistent action server + CLI client with MoveIt2 mock hardware. No Gazebo, no camera, no LLM yet.
 
-**Quick start**: `./run.sh sim` → launches RViz + MoveIt
+**Quick start**: `./run.sh sim` → launches RViz + MoveIt | `./run.sh tests` → runs integration tests
 
 **Running nodes** (after `./run.sh sim`):
 - `motion_server` — persistent action server, holds `ArmController` in memory
