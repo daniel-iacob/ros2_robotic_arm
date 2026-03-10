@@ -35,6 +35,10 @@
       <geometry><cylinder length="0.1" radius="0.08"/></geometry>
       <material name="orange"/>
     </visual>
+    <visual>
+      <geometry><sphere radius="0.065"/></geometry>
+      <material name="orange"/>
+    </visual>
     <collision>
       <origin xyz="0 0 0.05" rpy="0 0 0"/>
       <geometry><cylinder length="0.1" radius="0.08"/></geometry>
@@ -52,12 +56,16 @@
   <link name="upper_arm">
     <visual>
       <origin xyz="0 0 0.2" rpy="0 0 0"/>
-      <geometry><box size="0.06 0.06 0.4"/></geometry>
+      <geometry><cylinder length="0.4" radius="0.055"/></geometry>
+      <material name="silver"/>
+    </visual>
+    <visual>
+      <geometry><sphere radius="0.06"/></geometry>
       <material name="silver"/>
     </visual>
     <collision>
       <origin xyz="0 0 0.2" rpy="0 0 0"/>
-      <geometry><box size="0.06 0.06 0.4"/></geometry>
+      <geometry><cylinder length="0.4" radius="0.055"/></geometry>
     </collision>
   </link>
 
@@ -73,6 +81,10 @@
     <visual>
       <origin xyz="0 0 0.15" rpy="0 0 0"/>
       <geometry><cylinder length="0.3" radius="0.03"/></geometry>
+      <material name="orange"/>
+    </visual>
+    <visual>
+      <geometry><sphere radius="0.04"/></geometry>
       <material name="orange"/>
     </visual>
     <collision>
