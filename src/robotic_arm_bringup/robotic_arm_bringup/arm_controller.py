@@ -406,7 +406,11 @@ class ArmController:
         obj.id = object_name
 
         primitive = SolidPrimitive()
-        primitive.type = SolidPrimitive.BOX
+        shape = cfg.get("shape", "box").lower()
+        if shape == "cylinder":
+            primitive.type = SolidPrimitive.CYLINDER
+        else:
+            primitive.type = SolidPrimitive.BOX
         primitive.dimensions = list(cfg["dimensions"])
 
         pose = Pose()
@@ -811,7 +815,11 @@ class ArmController:
         cfg = self._object_config[object_name]
 
         primitive = SolidPrimitive()
-        primitive.type = SolidPrimitive.BOX
+        shape = cfg.get("shape", "box").lower()
+        if shape == "cylinder":
+            primitive.type = SolidPrimitive.CYLINDER
+        else:
+            primitive.type = SolidPrimitive.BOX
         primitive.dimensions = list(cfg["dimensions"])
 
         pose = Pose()

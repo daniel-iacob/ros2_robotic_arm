@@ -31,7 +31,11 @@ class SceneManager(Node):
         obj.id = name
 
         primitive = SolidPrimitive()
-        primitive.type = SolidPrimitive.BOX
+        shape = cfg.get("shape", "box").lower()
+        if shape == "cylinder":
+            primitive.type = SolidPrimitive.CYLINDER
+        else:
+            primitive.type = SolidPrimitive.BOX
         primitive.dimensions = list(cfg["dimensions"])
 
         pos = cfg["position"]

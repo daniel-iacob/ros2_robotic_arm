@@ -51,8 +51,10 @@ def test_close_gripper():
 def test_list_objects():
     rc, out = arm("list-objects")
     assert rc == 0, f"list-objects failed:\n{out}"
-    assert "blue_cube" in out, f"blue_cube not in output:\n{out}"
-    assert "red_cube" in out, f"red_cube not in output:\n{out}"
+    assert "blue_cylinder" in out, f"blue_cylinder not in output:\n{out}"
+    assert "red_cylinder" in out, f"red_cylinder not in output:\n{out}"
+    assert "green_cylinder" in out, f"green_cylinder not in output:\n{out}"
+    assert "basket" in out, f"basket not in output:\n{out}"
 
 
 # ── Move to ───────────────────────────────────────────────────────────────────
@@ -64,9 +66,9 @@ def test_move_to():
 
 # ── Pick and place ────────────────────────────────────────────────────────────
 
-def test_pick_blue_cube():
-    rc, out = arm("pick", "blue_cube")
-    assert rc == 0, f"pick blue_cube failed:\n{out}"
+def test_pick_blue_cylinder():
+    rc, out = arm("pick", "blue_cylinder")
+    assert rc == 0, f"pick blue_cylinder failed:\n{out}"
 
 
 def test_list_objects_held():
@@ -75,19 +77,34 @@ def test_list_objects_held():
     assert "held" in out, f"expected 'held' in output:\n{out}"
 
 
-def test_place_blue_cube_coords():
-    rc, out = arm("place", "blue_cube", "0.4", "0.1", "0.35")
-    assert rc == 0, f"place blue_cube failed:\n{out}"
+def test_place_blue_cylinder_on_basket():
+    """Place blue cylinder above the basket (tray top ~0.27, plus half cylinder height)."""
+    rc, out = arm("place", "blue_cylinder", "0.4", "0.25", "0.35")
+    assert rc == 0, f"place blue_cylinder on basket failed:\n{out}"
 
 
-def test_pick_red_cube():
-    rc, out = arm("pick", "red_cube")
-    assert rc == 0, f"pick red_cube failed:\n{out}"
+def test_pick_red_cylinder():
+    rc, out = arm("pick", "red_cylinder")
+    assert rc == 0, f"pick red_cylinder failed:\n{out}"
 
 
-def test_place_red_cube_no_coords():
-    rc, out = arm("place", "red_cube")
-    assert rc == 0, f"place red_cube failed:\n{out}"
+def test_place_red_cylinder_on_basket():
+    """Place red cylinder on basket next to blue cylinder."""
+    rc, out = arm("place", "red_cylinder", "0.4", "0.18", "0.35")
+    assert rc == 0, f"place red_cylinder on basket failed:\n{out}"
+
+
+# ── Pick and place green cylinder (no coords — returns to original position) ─
+
+def test_pick_green_cylinder():
+    rc, out = arm("pick", "green_cylinder")
+    assert rc == 0, f"pick green_cylinder failed:\n{out}"
+
+
+def test_place_green_cylinder_no_coords():
+    """Place green cylinder back at its original position (no explicit coords)."""
+    rc, out = arm("place", "green_cylinder")
+    assert rc == 0, f"place green_cylinder failed:\n{out}"
 
 
 # ── Post-sequence ─────────────────────────────────────────────────────────────

@@ -1,12 +1,26 @@
 objects:
-  blue_cube:
-    shape: box
-    dimensions: [0.05, 0.05, 0.05]
-    position: [0.5, 0.0, 0.3]
+  # --- cylinders (on-axis positions, within 0.45m reach) ---
+  blue_cylinder:
+    shape: cylinder
+    dimensions: [0.05, 0.025]   # [height, radius]
+    position: [0.45, 0.0, 0.3]
     color: [0.0, 0.0, 1.0, 1.0]
 
-  red_cube:
-    shape: box
-    dimensions: [0.05, 0.05, 0.05]
-    position: [0.0, 0.5, 0.3]
+  red_cylinder:
+    shape: cylinder
+    dimensions: [0.05, 0.025]
+    position: [0.0, -0.45, 0.3]
     color: [1.0, 0.0, 0.0, 1.0]
+
+  green_cylinder:
+    shape: cylinder
+    dimensions: [0.05, 0.025]
+    position: [0.35, -0.35, 0.3]
+    color: [0.0, 0.8, 0.0, 1.0]
+
+  # --- tray (positive Y side) ---
+  basket:
+    shape: box
+    dimensions: [0.20, 0.20, 0.02]
+    position: [0.4, 0.25, 0.26]
+    color: [0.6, 0.3, 0.0, 1.0]
