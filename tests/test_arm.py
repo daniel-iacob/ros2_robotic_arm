@@ -57,11 +57,37 @@ def test_list_objects():
     assert "basket" in out, f"basket not in output:\n{out}"
 
 
+# ── Error handling ────────────────────────────────────────────────────────────
+
+def test_pick_unknown_object():
+    """Picking a nonexistent object should fail gracefully."""
+    rc, out = arm("pick", "nonexistent_thing")
+    assert rc != 0, f"expected failure for unknown object:\n{out}"
+
+
+def test_move_to_unreachable():
+    """Moving to a position far beyond workspace should fail."""
+    rc, out = arm("move-to", "2.0", "0.0", "0.0")
+    assert rc != 0, f"expected failure for unreachable position:\n{out}"
+
+
 # ── Move to ───────────────────────────────────────────────────────────────────
 
 def test_move_to():
     rc, out = arm("move-to", "0.3", "0.2", "0.4")
     assert rc == 0, f"move-to failed:\n{out}"
+
+
+def test_move_to_negative_y():
+    """Arm can reach negative Y side."""
+    rc, out = arm("move-to", "0.3", "-0.2", "0.4")
+    assert rc == 0, f"move-to negative Y failed:\n{out}"
+
+
+def test_move_to_high():
+    """Arm can reach higher Z positions."""
+    rc, out = arm("move-to", "0.2", "0.0", "0.6")
+    assert rc == 0, f"move-to high Z failed:\n{out}"
 
 
 # ── Pick and place ────────────────────────────────────────────────────────────
@@ -94,6 +120,27 @@ def test_place_red_cylinder_on_basket():
     assert rc == 0, f"place red_cylinder on basket failed:\n{out}"
 
 
+# ── Verify positions after place ──────────────────────────────────────────────
+
+def test_verify_blue_on_basket():
+    """After placing, blue_cylinder should show basket-area coordinates."""
+    rc, out = arm("list-objects")
+    assert rc == 0, f"list-objects failed:\n{out}"
+    assert "blue_cylinder" in out, f"blue_cylinder missing:\n{out}"
+    # Should be at placed position (0.4, 0.25), not original (0.45, 0.0)
+    assert "0.400" in out, f"expected x=0.400 in output:\n{out}"
+    assert "held" not in out.split("blue_cylinder")[1].split("\n")[0], \
+        f"blue_cylinder should not be held:\n{out}"
+
+
+def test_verify_red_on_basket():
+    """After placing, red_cylinder should show basket-area coordinates."""
+    rc, out = arm("list-objects")
+    assert rc == 0, f"list-objects failed:\n{out}"
+    assert "red_cylinder" in out, f"red_cylinder missing:\n{out}"
+    assert "0.180" in out, f"expected y=0.180 in output:\n{out}"
+
+
 # ── Pick and place green cylinder (no coords — returns to original position) ─
 
 def test_pick_green_cylinder():
@@ -105,6 +152,20 @@ def test_place_green_cylinder_no_coords():
     """Place green cylinder back at its original position (no explicit coords)."""
     rc, out = arm("place", "green_cylinder")
     assert rc == 0, f"place green_cylinder failed:\n{out}"
+
+
+# ── Round-trip: re-pick from basket and return to original position ───────────
+
+def test_repick_blue_from_basket():
+    """Pick blue_cylinder from where it was placed on the basket."""
+    rc, out = arm("pick", "blue_cylinder")
+    assert rc == 0, f"repick blue_cylinder from basket failed:\n{out}"
+
+
+def test_place_blue_back_original():
+    """Return blue_cylinder to its original YAML position."""
+    rc, out = arm("place", "blue_cylinder", "0.45", "0.0", "0.3")
+    assert rc == 0, f"place blue_cylinder back to original failed:\n{out}"
 
 
 # ── Post-sequence ─────────────────────────────────────────────────────────────
@@ -123,3 +184,13 @@ def test_list_objects_after_reset():
     rc, out = arm("list-objects")
     assert rc == 0, f"list-objects failed:\n{out}"
     assert "held" not in out, f"unexpected 'held' after reset:\n{out}"
+
+
+def test_verify_positions_after_reset():
+    """After reset, all cylinders should be back at their YAML positions."""
+    rc, out = arm("list-objects")
+    assert rc == 0, f"list-objects failed:\n{out}"
+    # Original positions from objects.yaml
+    assert "0.450" in out, f"expected blue_cylinder x=0.450 after reset:\n{out}"
+    assert "-0.450" in out, f"expected red_cylinder y=-0.450 after reset:\n{out}"
+    assert "0.350" in out, f"expected green_cylinder coords after reset:\n{out}"
