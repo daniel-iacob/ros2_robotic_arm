@@ -83,6 +83,10 @@ These have caused bugs. Always remember them.
 - ✓ Pick-and-place with planning scene updates
 - ✓ `place` CLI accepts optional target position args
 - ✓ YAML-based object config (`objects.yaml`)
+- ✓ Cylinder + box shape support in scene
+- ✓ Basket (tray) as place target
+- ✓ 24 integration tests (error handling, state verification, round-trip) — all passing
+- ✓ place() visual fixed: object stays attached during lowering
 - ✗ Camera / vision (Phase 4)
 - ✗ LLM integration (Phase 5)
 
@@ -96,17 +100,14 @@ These have caused bugs. Always remember them.
 
 ## Known Limitations
 - 3-DOF: cannot achieve arbitrary orientations
+- 3-DOF: diagonal positions (r > 0.45m) unreliable at low Z — keep objects on-axis or closer
 - Mock hardware: no physics simulation
 - Object positions reset to YAML defaults if MoveIt restarts
+- MoveIt position tolerance (~1cm) means commanded ≠ actual gripper position
 
 ---
 
-## Latest Session Changes (2026-03-09)
+## Latest Session Changes (2026-03-16)
 
-- **Phase 3**: Added persistent `motion_server` node with 7 ROS2 actions + 1 service
-- New `robotic_arm_interfaces` package with `.action` and `.srv` definitions
-- CLI rewritten as thin action client (no longer creates `ArmController` directly)
-- Added `on_progress` callback to `pick()`, `place()`, `reset()` for action feedback
-- `place` CLI now accepts optional `x y [z]` position args
-- `motion_server` launches automatically with `./run.sh sim`
-- Condensed CLAUDE.md and CHANGELOG.md — focus on why, not how
+- **joint_1 constraint widened**: tolerance ±0.5 → ±1.5 rad in `_move_to_position()` — was blocking picks after large workspace swings (e.g. basket → -Y hemisphere). Root cause: overly tight joint bias constraint prevented MoveIt from planning across the full rotation range.
+- **place() reorder confirmed working**: object stays attached during lowering; 24/24 tests green.

@@ -243,17 +243,17 @@ class ArmController:
 
         self.logger.info(f"Placing {object_name} at ({x:.3f}, {y:.3f}, {release_z:.3f})")
 
-        # Step 1: Detach object from gripper
-        _report("detaching object", 0.0)
-        self._detach_object(object_name)
-        self._remove_object_from_scene(object_name)
-        time.sleep(0.1)
-
-        # Step 2: Lower slightly (Z - 0.05)
-        _report("lowering to release position", 0.20)
-        if not self._move_to_position(x, y, release_z):
+        # Step 1: Lower to release position (object stays attached and visible)
+        _report("lowering to release position", 0.0)
+        if not self._move_to_position(x, y, release_z, allowed_object=object_name):
             self.logger.warning(f"Could not lower to Z={release_z:.3f}, opening at current position")
 
+        time.sleep(0.1)
+
+        # Step 2: Detach and remove from scene
+        _report("detaching object", 0.20)
+        self._detach_object(object_name)
+        self._remove_object_from_scene(object_name)
         time.sleep(0.1)
 
         # Step 3: Open gripper
@@ -261,14 +261,14 @@ class ArmController:
         self.open_gripper()
         time.sleep(0.1)
 
-        # Step 4: Move away (lift up Z + 0.15)
-        _report("lifting away", 0.60)
-        self._move_to_position(x, y, release_z + 0.15)
-
-        # Step 5: Re-add object at release position with color
-        _report("updating scene", 0.80)
+        # Step 4: Re-add object at release position (visible again)
+        _report("updating scene", 0.60)
         self.update_object_position(object_name, x, y, release_z)
         self._clear_position_cache(object_name)
+
+        # Step 5: Lift away (allow collision with just-placed object at start state)
+        _report("lifting away", 0.80)
+        self._move_to_position(x, y, release_z + 0.15, allowed_object=object_name)
 
         self.logger.info(f"Placed: {object_name}")
         return True
@@ -717,8 +717,8 @@ class ArmController:
         jc = JointConstraint()
         jc.joint_name = "joint_1"
         jc.position = expected_j1
-        jc.tolerance_above = 0.5
-        jc.tolerance_below = 0.5
+        jc.tolerance_above = 1.5
+        jc.tolerance_below = 1.5
         jc.weight = 0.1
         goal_constraints.joint_constraints.append(jc)
 

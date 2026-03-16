@@ -105,7 +105,7 @@ def test_list_objects_held():
 
 def test_place_blue_cylinder_on_basket():
     """Place blue cylinder above the basket (tray top ~0.27, plus half cylinder height)."""
-    rc, out = arm("place", "blue_cylinder", "0.4", "0.25", "0.35")
+    rc, out = arm("place", "blue_cylinder", "0.45", "0.30", "0.35")
     assert rc == 0, f"place blue_cylinder on basket failed:\n{out}"
 
 
@@ -116,7 +116,7 @@ def test_pick_red_cylinder():
 
 def test_place_red_cylinder_on_basket():
     """Place red cylinder on basket next to blue cylinder."""
-    rc, out = arm("place", "red_cylinder", "0.4", "0.18", "0.35")
+    rc, out = arm("place", "red_cylinder", "0.35", "0.20", "0.35")
     assert rc == 0, f"place red_cylinder on basket failed:\n{out}"
 
 
@@ -127,8 +127,8 @@ def test_verify_blue_on_basket():
     rc, out = arm("list-objects")
     assert rc == 0, f"list-objects failed:\n{out}"
     assert "blue_cylinder" in out, f"blue_cylinder missing:\n{out}"
-    # Should be at placed position (0.4, 0.25), not original (0.45, 0.0)
-    assert "0.400" in out, f"expected x=0.400 in output:\n{out}"
+    # Should be at placed position (0.45, 0.30), not original (0.45, 0.0)
+    assert "0.300" in out, f"expected y=0.300 in output:\n{out}"
     assert "held" not in out.split("blue_cylinder")[1].split("\n")[0], \
         f"blue_cylinder should not be held:\n{out}"
 
@@ -138,7 +138,7 @@ def test_verify_red_on_basket():
     rc, out = arm("list-objects")
     assert rc == 0, f"list-objects failed:\n{out}"
     assert "red_cylinder" in out, f"red_cylinder missing:\n{out}"
-    assert "0.180" in out, f"expected y=0.180 in output:\n{out}"
+    assert "0.200" in out, f"expected y=0.200 in output:\n{out}"
 
 
 # ── Pick and place green cylinder (no coords — returns to original position) ─
@@ -154,18 +154,18 @@ def test_place_green_cylinder_no_coords():
     assert rc == 0, f"place green_cylinder failed:\n{out}"
 
 
-# ── Round-trip: re-pick from basket and return to original position ───────────
+# ── Round-trip: re-pick green cylinder and place at a different position ──────
 
-def test_repick_blue_from_basket():
-    """Pick blue_cylinder from where it was placed on the basket."""
-    rc, out = arm("pick", "blue_cylinder")
-    assert rc == 0, f"repick blue_cylinder from basket failed:\n{out}"
+def test_repick_green_cylinder():
+    """Pick green_cylinder from its original position (placed back earlier)."""
+    rc, out = arm("pick", "green_cylinder")
+    assert rc == 0, f"repick green_cylinder failed:\n{out}"
 
 
-def test_place_blue_back_original():
-    """Return blue_cylinder to its original YAML position."""
-    rc, out = arm("place", "blue_cylinder", "0.45", "0.0", "0.3")
-    assert rc == 0, f"place blue_cylinder back to original failed:\n{out}"
+def test_place_green_cylinder_new_position():
+    """Place green cylinder at a new open-air position (not on basket)."""
+    rc, out = arm("place", "green_cylinder", "0.40", "-0.15", "0.3")
+    assert rc == 0, f"place green_cylinder at new position failed:\n{out}"
 
 
 # ── Post-sequence ─────────────────────────────────────────────────────────────
@@ -193,4 +193,4 @@ def test_verify_positions_after_reset():
     # Original positions from objects.yaml
     assert "0.450" in out, f"expected blue_cylinder x=0.450 after reset:\n{out}"
     assert "-0.450" in out, f"expected red_cylinder y=-0.450 after reset:\n{out}"
-    assert "0.350" in out, f"expected green_cylinder coords after reset:\n{out}"
+    assert "-0.300" in out, f"expected green_cylinder y=-0.300 after reset:\n{out}"

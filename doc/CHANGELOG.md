@@ -5,6 +5,45 @@ Patterns and constraints: [MEMORY.md](MEMORY.md). Architecture: [architecture.md
 
 ---
 
+## 2026-03-16 — Fix pick failures across workspace swings
+
+### joint_1 constraint — root cause and fix
+- **Bug**: `pick` failed at "approaching object" after any `place` that left the arm in the +X/+Y quadrant (e.g. basket). Next pick targeting -Y hemisphere (red/green cylinders) would fail planning.
+- **Root cause**: `_move_to_position()` adds a `JointConstraint` on `joint_1` biased toward `atan2(y, x)` with ±0.5 rad tolerance. After placing near the basket, joint_1 is ~+0.5 rad; target for red is -1.57 rad — outside the constraint window. MoveIt couldn't plan across the ~2 rad swing.
+- **Fix**: widened tolerance to ±1.5 rad. The bias still guides toward natural configurations but no longer blocks cross-workspace moves.
+- **All 24 tests passing** (2:27 run time).
+
+---
+
+## 2026-03-15 — Cylinders, basket, expanded tests, place() reorder
+
+### Cylinder support
+- **Switched cubes → cylinders** — cubes at diagonal positions couldn't be grasped because the gripper fingers hit cube corners at 45° angles. Cylinders are rotationally symmetric → graspable from any approach angle
+- Added `shape` field support in `scene_manager.py` and `arm_controller.py` (`SolidPrimitive.CYLINDER` when `shape: cylinder`)
+- Cylinder dimensions are `[height, radius]` (MoveIt convention), not `[x, y, z]`
+
+### Scene changes
+- **Basket (tray)** added — flat box (0.20×0.20×0.02m) at (0.4, 0.25, 0.26) for place targets
+- 3 cylinders: blue (0.45, 0.0), red (0.0, -0.45), green (0.30, -0.30)
+- Green at diagonal — validates that cylinders fix the orientation issue
+
+### Test expansion (15 → 24 tests)
+- Error handling: unknown object pick, unreachable move-to
+- Movement range: negative Y, high Z
+- State verification: check positions after place, after reset
+- Round-trip: repick green cylinder, place at new position
+
+### place() step reorder — confirmed working
+- Object stays attached during lower step, detach happens after lowering → no more brief disappearance
+- `allowed_object` ACM on lift step handles `START_STATE_IN_COLLISION` after re-add
+
+### Lessons learned
+- 3-DOF arm can't reliably reach diagonal positions (r > 0.45m) at low Z — keep objects on-axis or closer
+- `place()` return value doesn't check lift success → silent failures cascade to next command
+- MoveIt position tolerance (1cm sphere) means commanded ≠ actual gripper position — matters when re-adding objects near gripper
+
+---
+
 ## 2026-03-10 — Integration test suite
 - Added `./run.sh tests` — pytest-based system tests that run CLI commands against a live sim
 
