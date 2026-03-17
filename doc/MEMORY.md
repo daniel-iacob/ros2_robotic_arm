@@ -7,25 +7,26 @@ Architecture diagrams and design decisions live in `doc/architecture.md`.
 
 ---
 
-## Project Structure (Phase 2)
+## Project Structure (Phase 3)
 
+- **Motion server**: `motion_server.py` — persistent node, holds `ArmController` in memory, 7 actions + 1 service
 - **Motion library**: `arm_controller.py` → `ArmController` class (importable)
-- **CLI**: `arm_cli.py` → subcommands: `pick`, `place`, `home`, `move-to`, `open-gripper`, `close-gripper`, `reset`, `list-objects`
-- **Shell wrapper**: `robotic_arm.sh` — forwards to `ros2 run robotic_arm_bringup arm ...`, shows help with no args
-- **Object config**: `config/objects.yaml` → single source of truth (both `scene_manager` and `ArmController` read it)
+- **CLI**: `arm_cli.py` → thin action client, sends goals to `motion_server`
+- **Shell wrapper**: `robotic_arm.sh` — forwards to `ros2 run robotic_arm_bringup arm ...`
+- **Interfaces**: `robotic_arm_interfaces` package — `.action`/`.srv`/`.msg` definitions
+- **Object config**: `config/objects.yaml` → single source of truth
 - **Object IDs**: match YAML keys (`blue_cube`, `red_cube`)
-- **Position persistence**: MoveIt is the authority for world objects. `/tmp/arm_object_positions.json` is the authority for held (attached) objects — written by `pick()`/`move_to()`, read by `_sync_object_positions()` at startup, cleared by `place()`/`reset()`.
+- **State**: lives in `motion_server` memory — no more `/tmp/` cache needed (legacy cache still in code)
 
 ---
 
-## Cross-Process State (Critical)
+## Executor Deadlock (Critical)
 
-Each `ros2 run` call is a **separate Python process**. `self.objects` in-memory state is lost between calls. Two persistence mechanisms:
+**`rclpy.spin_until_future_complete()` deadlocks if an executor is already spinning the node.**
 
-1. **MoveIt world collision objects** — persist in `move_group` server. `_sync_object_positions()` reads them at startup for world objects.
-2. **`/tmp/arm_object_positions.json` cache** — used for attached (held) objects only. MoveIt attached object poses are in **link frame** (`grasp_link`), not `base_link` — so they cannot be used as world positions.
+When `ArmController` runs inside `motion_server` (which uses `MultiThreadedExecutor`), calling `spin_until_future_complete` tries to spin a node that's already being spun → deadlock.
 
-**Why not use MoveIt for attached object positions**: `AttachedCollisionObject` pose is stored in the attach link's frame. Reading `obj.pose.position` gives near-zero values (offset relative to `grasp_link`), not the world position.
+**Fix**: `_wait_for_future()` in `arm_controller.py` checks `node.executor is not None`. If executor exists, polls with `time.sleep(0.01)` loop. If no executor (standalone mode), uses `spin_until_future_complete`.
 
 ---
 

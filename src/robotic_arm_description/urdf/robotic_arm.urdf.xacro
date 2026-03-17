@@ -1,9 +1,13 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="robotic_arm">
 
-  <material name="dark_grey"><color rgba="0.2 0.2 0.2 1"/></material>
-  <material name="orange"><color rgba="1.0 0.5 0 1"/></material>
-  <material name="silver"><color rgba="0.8 0.8 0.8 1"/></material>
+  <!-- Kuka-style orange gradient base → fingers -->
+  <material name="c1"><color rgba="0.70 0.25 0.00 1"/></material>  <!-- base      — deep orange -->
+  <material name="c2"><color rgba="0.80 0.35 0.00 1"/></material>  <!-- shoulder  -->
+  <material name="c3"><color rgba="0.88 0.45 0.00 1"/></material>  <!-- upper arm -->
+  <material name="c4"><color rgba="0.94 0.55 0.05 1"/></material>  <!-- forearm   -->
+  <material name="c5"><color rgba="0.18 0.18 0.18 1"/></material>  <!-- wrist     — dark -->
+  <material name="c6"><color rgba="0.28 0.28 0.28 1"/></material>  <!-- fingers   — dark grey -->
 
   <link name="world"/>
   <joint name="world_joint" type="fixed">
@@ -12,10 +16,17 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
+  <!-- BASE — wide cylinder with top coupling disc -->
   <link name="base_link">
     <visual>
-      <geometry><cylinder length="0.1" radius="0.12"/></geometry>
-      <material name="dark_grey"/>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry><cylinder length="0.10" radius="0.12"/></geometry>
+      <material name="c1"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0.105" rpy="0 0 0"/>
+      <geometry><cylinder length="0.01" radius="0.10"/></geometry>
+      <material name="c1"/>
     </visual>
     <collision>
       <geometry><cylinder length="0.1" radius="0.12"/></geometry>
@@ -29,11 +40,25 @@
     <axis xyz="0 0 1"/>
   </joint>
 
+  <!-- SHOULDER — stacked disc / body / disc (Kuka style) -->
   <link name="shoulder_link">
     <visual>
-      <origin xyz="0 0 0.05" rpy="0 0 0"/>
-      <geometry><cylinder length="0.1" radius="0.08"/></geometry>
-      <material name="orange"/>
+      <!-- bottom coupling disc (joint_1 plane) -->
+      <origin xyz="0 0 0.012" rpy="0 0 0"/>
+      <geometry><cylinder length="0.024" radius="0.082"/></geometry>
+      <material name="c2"/>
+    </visual>
+    <visual>
+      <!-- shoulder body -->
+      <origin xyz="0 0 0.052" rpy="0 0 0"/>
+      <geometry><cylinder length="0.052" radius="0.068"/></geometry>
+      <material name="c2"/>
+    </visual>
+    <visual>
+      <!-- top coupling disc (joint_2 plane) -->
+      <origin xyz="0 0 0.088" rpy="0 0 0"/>
+      <geometry><cylinder length="0.024" radius="0.082"/></geometry>
+      <material name="c2"/>
     </visual>
     <collision>
       <origin xyz="0 0 0.05" rpy="0 0 0"/>
@@ -44,20 +69,34 @@
   <joint name="joint_2" type="revolute">
     <parent link="shoulder_link"/>
     <child link="upper_arm"/>
-    <origin xyz="0 0 0.1" rpy="0 0 0"/> 
+    <origin xyz="0 0 0.1" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="-1.57" upper="1.57" effort="50.0" velocity="1.0"/>
   </joint>
 
+  <!-- UPPER ARM — horizontal knuckle at joint_2, arm tube, knuckle at joint_3 end -->
   <link name="upper_arm">
     <visual>
-      <origin xyz="0 0 0.2" rpy="0 0 0"/>
-      <geometry><box size="0.06 0.06 0.4"/></geometry>
-      <material name="silver"/>
+      <!-- joint_2 horizontal knuckle (Y-axis pivot housing) -->
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder length="0.12" radius="0.068"/></geometry>
+      <material name="c3"/>
+    </visual>
+    <visual>
+      <!-- arm tube -->
+      <origin xyz="0 0 0.22" rpy="0 0 0"/>
+      <geometry><cylinder length="0.32" radius="0.048"/></geometry>
+      <material name="c3"/>
+    </visual>
+    <visual>
+      <!-- joint_3 horizontal knuckle at top end -->
+      <origin xyz="0 0 0.40" rpy="1.5708 0 0"/>
+      <geometry><cylinder length="0.10" radius="0.060"/></geometry>
+      <material name="c3"/>
     </visual>
     <collision>
       <origin xyz="0 0 0.2" rpy="0 0 0"/>
-      <geometry><box size="0.06 0.06 0.4"/></geometry>
+      <geometry><cylinder length="0.4" radius="0.055"/></geometry>
     </collision>
   </link>
 
@@ -69,11 +108,19 @@
     <limit lower="-2.0" upper="2.0" effort="30.0" velocity="1.5"/>
   </joint>
 
+  <!-- FOREARM — horizontal knuckle at joint_3, slim forearm tube -->
   <link name="forearm">
     <visual>
-      <origin xyz="0 0 0.15" rpy="0 0 0"/>
-      <geometry><cylinder length="0.3" radius="0.03"/></geometry>
-      <material name="orange"/>
+      <!-- joint_3 horizontal knuckle (Y-axis pivot housing) -->
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder length="0.09" radius="0.050"/></geometry>
+      <material name="c4"/>
+    </visual>
+    <visual>
+      <!-- forearm tube -->
+      <origin xyz="0 0 0.16" rpy="0 0 0"/>
+      <geometry><cylinder length="0.26" radius="0.028"/></geometry>
+      <material name="c4"/>
     </visual>
     <collision>
       <origin xyz="0 0 0.15" rpy="0 0 0"/>
@@ -87,10 +134,17 @@
     <origin xyz="0 0 0.3" rpy="0 0 0"/>
   </joint>
 
+  <!-- WRIST + PALM -->
   <link name="gripper_base">
     <visual>
-      <geometry><box size="0.1 0.1 0.05"/></geometry>
-      <material name="dark_grey"/>
+      <origin xyz="0 0 -0.008" rpy="0 0 0"/>
+      <geometry><cylinder length="0.03" radius="0.038"/></geometry>
+      <material name="c5"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0.013" rpy="0 0 0"/>
+      <geometry><box size="0.088 0.072 0.025"/></geometry>
+      <material name="c5"/>
     </visual>
     <collision>
       <geometry><box size="0.1 0.1 0.05"/></geometry>
@@ -105,10 +159,11 @@
     <limit lower="-0.04" upper="0.0" effort="10.0" velocity="0.1"/>
   </joint>
 
+  <!-- FINGERS -->
   <link name="left_finger">
     <visual>
       <geometry><box size="0.02 0.02 0.08"/></geometry>
-      <material name="silver"/>
+      <material name="c6"/>
     </visual>
     <collision>
       <geometry><box size="0.02 0.02 0.08"/></geometry>
@@ -127,7 +182,7 @@
   <link name="right_finger">
     <visual>
       <geometry><box size="0.02 0.02 0.08"/></geometry>
-      <material name="silver"/>
+      <material name="c6"/>
     </visual>
     <collision>
       <geometry><box size="0.02 0.02 0.08"/></geometry>

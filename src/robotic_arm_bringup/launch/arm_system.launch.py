@@ -24,4 +24,12 @@ def generate_launch_description():
         output="screen",
     )
 
-    return LaunchDescription([moveit_demo, scene_manager_node])
+    # Motion Server Node (persistent action server for arm control)
+    motion_server_node = Node(
+        package="robotic_arm_bringup",
+        executable="motion_server",
+        name="motion_server",
+        output="screen",
+    )
+
+    return LaunchDescription([moveit_demo, scene_manager_node, motion_server_node])

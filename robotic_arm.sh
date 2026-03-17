@@ -11,7 +11,7 @@ usage() {
     echo -e "Commands:"
     echo -e "  ${GREEN}pick <object>${NC}                 Pick up object at its current position"
     echo -e "  ${GREEN}move-to <x> <y> <z>${NC}          Move end-effector to position (carries object if holding)"
-    echo -e "  ${GREEN}place <object>${NC}                Release object at current position"
+    echo -e "  ${GREEN}place <object> [x y [z]]${NC}       Release object (optionally at position)"
     echo -e "  ${GREEN}home${NC}                          Return arm to home position"
     echo -e "  ${GREEN}open-gripper${NC}                  Open gripper"
     echo -e "  ${GREEN}close-gripper${NC}                 Close gripper"

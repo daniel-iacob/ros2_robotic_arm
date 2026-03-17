@@ -46,8 +46,8 @@ flowchart TD
 
     subgraph app["Application (robotic_arm_bringup)"]
         scene_manager
-        arm_cli["arm_cli (ArmController)"]
-        motion_server
+        motion_server["motion_server (ArmController)"]
+        arm_cli["arm_cli (action client)"]
     end
 
     subgraph infra["MoveIt2 + ros2_control"]
@@ -73,7 +73,7 @@ flowchart TD
         notimpl([not implemented]):::planned
     end
 
-    class llm_interface_node,validator_node,camera_node,vision_node,motion_server,hw_drivers,real_robot planned
+    class llm_interface_node,validator_node,camera_node,vision_node,hw_drivers,real_robot planned
 
     llm_interface_node --> validator_node
     validator_node --> motion_server
@@ -82,10 +82,10 @@ flowchart TD
     vision_node -->|/detected_objects| motion_server
 
     scene_manager -->|/planning_scene topic| move_group
-    arm_cli -->|/move_action| move_group
-    arm_cli -->|/apply_planning_scene svc| move_group
-    arm_cli -->|/get_planning_scene svc| move_group
+    arm_cli -->|actions| motion_server
     motion_server -->|/move_action| move_group
+    motion_server -->|/apply_planning_scene svc| move_group
+    motion_server -->|/get_planning_scene svc| move_group
 
     move_group -->|follow_joint_trajectory| arm_controller
     move_group -->|follow_joint_trajectory| gripper_controller
@@ -98,7 +98,6 @@ flowchart TD
     hw_drivers --> joint_state_broadcaster
     hw_drivers --> real_robot
 
-    joint_state_broadcaster -->|/joint_states| arm_cli
     joint_state_broadcaster -->|/joint_states| motion_server
     joint_state_broadcaster -->|/joint_states| rviz2
     move_group -->|/tf| rviz2
@@ -148,7 +147,7 @@ sequenceDiagram
 
 - [x] **Phase 1** — CLI motion control (`move_to_cube`), scene manager, MoveIt2 integration, pick-and-place
 - [x] **Phase 2** — Importable motion library (`ArmController`) + YAML config + thin CLI (`arm`)
-- [ ] **Phase 3** — `motion_server` node: persistent ROS2 action server replacing one-shot CLI
+- [x] **Phase 3** — `motion_server` node: persistent ROS2 action server; CLI rewritten as action client
 - [ ] **Phase 4** — `camera_node`: camera sensor integration, publishes `/camera/image_raw`
 - [ ] **Phase 5** — `vision_node`: object detection from camera, publishes `/detected_objects`; replaces hardcoded cube positions
 - [ ] **Phase 6** — `llm_interface_node`: natural language → `validator_node` → motion server actions
@@ -160,13 +159,21 @@ sequenceDiagram
 
 | Name | Msg Type | Kind | Publisher / Server | Subscriber / Client |
 |------|----------|------|--------------------|---------------------|
-| `/planning_scene` | `moveit_msgs/PlanningScene` | topic | `scene_manager`, `arm_cli` (fallback) | `move_group` |
-| `/apply_planning_scene` | `moveit_msgs/ApplyPlanningScene` | service | `move_group` (server) | `arm_cli` (client) |
-| `/get_planning_scene` | `moveit_msgs/GetPlanningScene` | service | `move_group` (server) | `arm_cli` (client) |
-| `/joint_states` | `sensor_msgs/JointState` | topic | `joint_state_broadcaster` | `arm_cli`, `robot_state_publisher` |
+| `/pick` | `robotic_arm_interfaces/Pick` | action | `motion_server` | `arm_cli`, any node |
+| `/place` | `robotic_arm_interfaces/Place` | action | `motion_server` | `arm_cli`, any node |
+| `/move_to` | `robotic_arm_interfaces/MoveTo` | action | `motion_server` | `arm_cli`, any node |
+| `/home` | `robotic_arm_interfaces/Home` | action | `motion_server` | `arm_cli`, any node |
+| `/reset` | `robotic_arm_interfaces/Reset` | action | `motion_server` | `arm_cli`, any node |
+| `/open_gripper` | `robotic_arm_interfaces/OpenGripper` | action | `motion_server` | `arm_cli`, any node |
+| `/close_gripper` | `robotic_arm_interfaces/CloseGripper` | action | `motion_server` | `arm_cli`, any node |
+| `/list_objects` | `robotic_arm_interfaces/ListObjects` | service | `motion_server` | `arm_cli`, any node |
+| `/planning_scene` | `moveit_msgs/PlanningScene` | topic | `scene_manager`, `motion_server` (fallback) | `move_group` |
+| `/apply_planning_scene` | `moveit_msgs/ApplyPlanningScene` | service | `move_group` (server) | `motion_server` (client) |
+| `/get_planning_scene` | `moveit_msgs/GetPlanningScene` | service | `move_group` (server) | `motion_server` (client) |
+| `/joint_states` | `sensor_msgs/JointState` | topic | `joint_state_broadcaster` | `motion_server`, `robot_state_publisher` |
 | `/tf` / `/tf_static` | `tf2_msgs/TFMessage` | topic | `robot_state_publisher` | `move_group`, RViz |
 | `/display_planned_path` | `moveit_msgs/DisplayTrajectory` | topic | `move_group` | RViz |
-| `/move_action` | `moveit_msgs/MoveGroup` | action | `move_group` (server) | `arm_cli` (client) |
+| `/move_action` | `moveit_msgs/MoveGroup` | action | `move_group` (server) | `motion_server` (client) |
 | `/arm_controller/follow_joint_trajectory` | `control_msgs/FollowJointTrajectory` | action | `arm_controller` (server) | `move_group` (client) |
 | `/gripper_controller/follow_joint_trajectory` | `control_msgs/FollowJointTrajectory` | action | `gripper_controller` (server) | `move_group` (client) |
 
@@ -178,7 +185,8 @@ sequenceDiagram
 |---------|------|-----------|
 | `robotic_arm_description` | Robot model: URDF/xacro, meshes, TF structure | `urdf/robotic_arm.urdf.xacro` |
 | `robotic_arm_moveit_config` | MoveIt2 config: planning groups, IK, controllers, joint limits | `config/robotic_arm.srdf`, `config/kinematics.yaml`, `config/moveit_controllers.yaml` |
-| `robotic_arm_bringup` | Application logic: scene setup, motion library, CLI, object config | `arm_controller.py`, `arm_cli.py`, `scene_manager.py`, `config/objects.yaml`, `launch/arm_system.launch.py` |
+| `robotic_arm_interfaces` | ROS2 action/service/message definitions for arm control | `action/*.action`, `srv/ListObjects.srv`, `msg/ObjectInfo.msg` |
+| `robotic_arm_bringup` | Application logic: action server, motion library, CLI client, scene setup | `motion_server.py`, `arm_controller.py`, `arm_cli.py`, `scene_manager.py`, `config/objects.yaml` |
 
 ---
 

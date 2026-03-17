@@ -15,6 +15,7 @@ usage() {
     echo -e "  ${GREEN}build${NC}   : Build the workspace using colcon"
     echo -e "  ${GREEN}clean${NC}   : Remove build, install, and log folders"
     echo -e "  ${GREEN}sim${NC}     : Launch the entire simulation"
+    echo -e "  ${GREEN}tests${NC}   : Run integration tests (pytest)"
     echo -e "${BLUE}------------------------------------------${NC}"
 }
 
@@ -46,6 +47,12 @@ case "$1" in
         echo -e "${BLUE}Starting Simulation...${NC}"
         source install/setup.bash
         ros2 launch robotic_arm_bringup arm_system.launch.py
+        ;;
+    tests)
+        echo -e "${BLUE}Running integration tests...${NC}"
+        find tests/ -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+        source install/setup.bash
+        pytest -v -s
         ;;
     *)
         echo -e "${YELLOW}Invalid option: $1${NC}"
