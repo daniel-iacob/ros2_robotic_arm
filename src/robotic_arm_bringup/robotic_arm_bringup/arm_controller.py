@@ -261,14 +261,17 @@ class ArmController:
         self.open_gripper()
         time.sleep(0.1)
 
-        # Step 4: Re-add object at release position (visible again)
+        # Step 4: Move up slightly before re-adding object (object not in scene yet — no collision)
+        self._move_to_position(x, y, release_z + 0.04)
+
+        # Step 5: Re-add object at release position (arm is 4cm clear — no collision)
         _report("updating scene", 0.60)
         self.update_object_position(object_name, x, y, release_z)
         self._clear_position_cache(object_name)
 
-        # Step 5: Lift away (allow collision with just-placed object at start state)
+        # Step 6: Lift away (arm already clear of object)
         _report("lifting away", 0.80)
-        self._move_to_position(x, y, release_z + 0.15, allowed_object=object_name)
+        self._move_to_position(x, y, release_z + 0.15)
 
         self.logger.info(f"Placed: {object_name}")
         return True
