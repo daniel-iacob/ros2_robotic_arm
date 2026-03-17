@@ -10,7 +10,7 @@
 
 2. **The arm has a gripper** (like a hand) and can pick up objects, move them, and put them down somewhere else.
 
-3. **There are currently two colored cubes** in the scene — a blue one and a red one — sitting on a virtual table. These are the objects the arm practices with.
+3. **There are currently three colored cylinders** (blue, red, green) and a basket in the scene. These are the objects the arm picks and places.
 
 4. **You control the arm by typing commands**, e.g. "pick up the blue cube" or "place it at this position". There's no physical button or joystick.
 
@@ -148,10 +148,8 @@ sequenceDiagram
 - [x] **Phase 1** — CLI motion control (`move_to_cube`), scene manager, MoveIt2 integration, pick-and-place
 - [x] **Phase 2** — Importable motion library (`ArmController`) + YAML config + thin CLI (`arm`)
 - [x] **Phase 3** — `motion_server` node: persistent ROS2 action server; CLI rewritten as action client
-- [ ] **Phase 4** — `camera_node`: camera sensor integration, publishes `/camera/image_raw`
-- [ ] **Phase 5** — `vision_node`: object detection from camera, publishes `/detected_objects`; replaces hardcoded cube positions
-- [ ] **Phase 6** — `llm_interface_node`: natural language → `validator_node` → motion server actions
-- [ ] **Phase 6** — `validator_node`: validates LLM requests before execution (objects exist, positions reachable, etc.)
+- [ ] **Phase 4** — Camera + vision: `camera_node` (publishes `/camera/image_raw`) + `vision_node` (HSV color-based detection, publishes `/detected_objects`; feeds real positions into planning scene, replacing `objects.yaml` at runtime)
+- [ ] **Phase 5** — LLM interface: `llm_interface_node` + `validator_node`; natural language → validated action goals → `motion_server`
 
 ---
 

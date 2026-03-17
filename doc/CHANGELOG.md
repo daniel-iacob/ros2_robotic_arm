@@ -5,6 +5,25 @@ Patterns and constraints: [MEMORY.md](MEMORY.md). Architecture: [architecture.md
 
 ---
 
+## 2026-03-17 — URDF visual overhaul + place() START_STATE_IN_COLLISION fix
+
+### place() lift collision — root cause and fix
+- **Bug**: After placing red_cylinder, the subsequent green_cylinder pick failed. Root cause: `place()` re-added the object to the planning scene at `release_z` while the arm fingers were still at that height → `left_finger - red_cylinder` START_STATE_IN_COLLISION → lift plan rejected → green's approach was never reached.
+- **Why ACM didn't help**: MoveIt's `CheckStartStateCollision` adapter fires before `planning_scene_diff` is applied. The `allowed_object` ACM entry has no effect on start state validation — only on path collision.
+- **Fix**: Move arm 4cm upward BEFORE re-adding the object to the world scene. At that moment the object is not in the scene, so no collision is possible. Re-add object, then lift the remaining distance. Sequence: detach → remove → open gripper → move +4cm → re-add object → lift to +15cm.
+- **All 24 tests passing** post-fix.
+
+### URDF visual overhaul — Kuka orange gradient
+- Replaced plain-color boxes with Kuka-style cylinder geometry. Orange gradient (c1–c4) from base to forearm; dark gripper (c5–c6).
+- Added horizontal cylindrical knuckles at revolute joints (joint_2, joint_3) to mimic Kuka elbow appearance.
+- **Critical rule followed**: only `<visual>` blocks modified. All `<joint>` origins, `<collision>` geometry/origins, and `<ros2_control>` section preserved byte-for-byte from commit c70dcf4.
+- **Regression risk**: During visual work, a collision geometry change (box → cylinder on upper_arm) was accidentally introduced and caused 21/24 test failures. Reset to c70dcf4 and redid visuals with collision untouched.
+
+### RViz — show URDF colors
+- `MotionPlanning > Scene Robot`: `Show Robot Visual: false → true`, `Robot Alpha: 0.5 → 1`. Required to display URDF material colors on the current robot pose (not just the planned path ghost).
+
+---
+
 ## 2026-03-16 — Fix pick failures across workspace swings
 
 ### joint_1 constraint — root cause and fix

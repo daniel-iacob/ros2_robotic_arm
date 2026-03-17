@@ -87,6 +87,8 @@ These have caused bugs. Always remember them.
 - ✓ Basket (tray) as place target
 - ✓ 24 integration tests (error handling, state verification, round-trip) — all passing
 - ✓ place() visual fixed: object stays attached during lowering
+- ✓ Kuka-style URDF: orange gradient (c1–c4) + horizontal cylindrical knuckles at joints
+- ✓ RViz shows URDF colors (Scene Robot → Show Robot Visual: true)
 - ✗ Camera / vision (Phase 4)
 - ✗ LLM integration (Phase 5)
 
@@ -95,8 +97,8 @@ These have caused bugs. Always remember them.
 - [x] **Phase 1** — CLI motion control, MoveIt2 integration, pick-and-place
 - [x] **Phase 2** — Importable `ArmController` library + YAML config + thin CLI
 - [x] **Phase 3** — Persistent `motion_server` action server + CLI as action client
-- [ ] **Phase 4** — Camera + vision-based object detection
-- [ ] **Phase 5** — LLM interface for natural language control
+- [ ] **Phase 4** — Camera + vision: `camera_node` (publishes `/camera/image_raw`) + `vision_node` (color-based detection, publishes `/detected_objects`; replaces hardcoded object positions)
+- [ ] **Phase 5** — LLM interface: `llm_interface_node` + `validator_node` → natural language → motion server actions
 
 ## Known Limitations
 - 3-DOF: cannot achieve arbitrary orientations
@@ -107,7 +109,10 @@ These have caused bugs. Always remember them.
 
 ---
 
-## Latest Session Changes (2026-03-16)
+## Latest Session Changes (2026-03-17)
 
-- **joint_1 constraint widened**: tolerance ±0.5 → ±1.5 rad in `_move_to_position()` — was blocking picks after large workspace swings (e.g. basket → -Y hemisphere). Root cause: overly tight joint bias constraint prevented MoveIt from planning across the full rotation range.
-- **place() reorder confirmed working**: object stays attached during lowering; 24/24 tests green.
+- **place() lift collision fixed**: `left_finger - red_cylinder` START_STATE_IN_COLLISION after place. Root cause: object re-added to scene while arm still at release_z. Fix: move arm +4cm before re-adding object — no geometric overlap possible when object isn't in scene yet.
+- **URDF visual overhaul**: Kuka orange gradient (c1–c4) + dark gripper (c5–c6). Horizontal cylindrical knuckles at joint_2 and joint_3. Collision/joint/ros2_control blocks unchanged.
+- **RViz colors**: MotionPlanning → Scene Robot → `Show Robot Visual: true`, `Robot Alpha: 1`.
+- **Lesson**: Only edit `<visual>` blocks in URDF. Any collision or joint origin change — even small — can break kinematics and fail tests.
+- **Phase 4 plan**: `camera_node` → `/camera/image_raw` → `vision_node` (HSV detection) → `/detected_objects` → replaces `objects.yaml` positions at runtime.
