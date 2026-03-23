@@ -24,7 +24,7 @@ Learn ROS2 concepts with a simulated robotic arm + gripper + camera → eventual
 
 ## Quick Reference
 
-**What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Phase 3 — persistent action server + CLI client with MoveIt2 mock hardware. No Gazebo, no camera, no LLM yet.
+**What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Phase 3 complete, Phase 4 designed — persistent action server + CLI client with MoveIt2 mock hardware. No Gazebo, no camera yet, no LLM.
 
 **Quick start**: `./run.sh sim` → launches RViz + MoveIt | `./run.sh tests` → runs integration tests
 
@@ -97,7 +97,7 @@ These have caused bugs. Always remember them.
 - [x] **Phase 1** — CLI motion control, MoveIt2 integration, pick-and-place
 - [x] **Phase 2** — Importable `ArmController` library + YAML config + thin CLI
 - [x] **Phase 3** — Persistent `motion_server` action server + CLI as action client
-- [ ] **Phase 4** — Camera + vision: `camera_node` (publishes `/camera/image_raw`) + `vision_node` (color-based detection, publishes `/detected_objects`; replaces hardcoded object positions)
+- [ ] **Phase 4** — Camera + vision: synthetic `camera_node` + real `vision_node` (HSV detection) in new `robotic_arm_perception` package. Design: [`doc/camera_vision.md`](doc/camera_vision.md)
 - [ ] **Phase 5** — LLM interface: `llm_interface_node` + `validator_node` → natural language → motion server actions
 
 ## Known Limitations
@@ -115,4 +115,4 @@ These have caused bugs. Always remember them.
 - **URDF visual overhaul**: Kuka orange gradient (c1–c4) + dark gripper (c5–c6). Horizontal cylindrical knuckles at joint_2 and joint_3. Collision/joint/ros2_control blocks unchanged.
 - **RViz colors**: MotionPlanning → Scene Robot → `Show Robot Visual: true`, `Robot Alpha: 1`.
 - **Lesson**: Only edit `<visual>` blocks in URDF. Any collision or joint origin change — even small — can break kinematics and fail tests.
-- **Phase 4 plan**: `camera_node` → `/camera/image_raw` → `vision_node` (HSV detection) → `/detected_objects` → replaces `objects.yaml` positions at runtime.
+- **Phase 4 designed**: Synthetic camera (no Gazebo) + real HSV detection in new `robotic_arm_perception` package. Top-down orthographic camera. Color config + Z height from `objects.yaml`. Full design in [`doc/camera_vision.md`](doc/camera_vision.md).

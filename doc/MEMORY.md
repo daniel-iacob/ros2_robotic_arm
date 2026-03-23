@@ -126,3 +126,15 @@ No `command_interface` — only `state_interface`. Mimic info from URDF `<mimic>
 ## open_loop_control
 
 `arm_controller` requires `open_loop_control: true` in ros2_controllers.yaml for mock hardware.
+
+---
+
+## Phase 4 — Camera + Vision Design Decisions
+
+- **No Gazebo** — synthetic `camera_node` renders MoveIt scene as top-down image
+- **New package**: `robotic_arm_perception` (swappable for Gazebo later)
+- **Swap boundary**: `/camera/image_raw` — `vision_node` and everything downstream is permanent code
+- **`vision_node` must NOT access MoveIt** — only processes pixels from `/camera/image_raw`
+- **Color config from `objects.yaml`** — single source of truth for both `camera_node` and `vision_node`
+- **Z = fixed from YAML** — top-down orthographic camera can't determine height
+- **Design doc**: `doc/camera_vision.md`

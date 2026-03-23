@@ -148,7 +148,7 @@ sequenceDiagram
 - [x] **Phase 1** — CLI motion control (`move_to_cube`), scene manager, MoveIt2 integration, pick-and-place
 - [x] **Phase 2** — Importable motion library (`ArmController`) + YAML config + thin CLI (`arm`)
 - [x] **Phase 3** — `motion_server` node: persistent ROS2 action server; CLI rewritten as action client
-- [ ] **Phase 4** — Camera + vision: `camera_node` (publishes `/camera/image_raw`) + `vision_node` (HSV color-based detection, publishes `/detected_objects`; feeds real positions into planning scene, replacing `objects.yaml` at runtime)
+- [ ] **Phase 4** — Camera + vision: synthetic `camera_node` + real `vision_node` (HSV detection). New `robotic_arm_perception` package. Design doc: [`doc/camera_vision.md`](camera_vision.md)
 - [ ] **Phase 5** — LLM interface: `llm_interface_node` + `validator_node`; natural language → validated action goals → `motion_server`
 
 ---
@@ -168,6 +168,8 @@ sequenceDiagram
 | `/planning_scene` | `moveit_msgs/PlanningScene` | topic | `scene_manager`, `motion_server` (fallback) | `move_group` |
 | `/apply_planning_scene` | `moveit_msgs/ApplyPlanningScene` | service | `move_group` (server) | `motion_server` (client) |
 | `/get_planning_scene` | `moveit_msgs/GetPlanningScene` | service | `move_group` (server) | `motion_server` (client) |
+| `/camera/image_raw` | `sensor_msgs/Image` | topic | `camera_node` (planned) | `vision_node` |
+| `/detected_objects` | `robotic_arm_interfaces/DetectedObjects` | topic | `vision_node` (planned) | `motion_server` |
 | `/joint_states` | `sensor_msgs/JointState` | topic | `joint_state_broadcaster` | `motion_server`, `robot_state_publisher` |
 | `/tf` / `/tf_static` | `tf2_msgs/TFMessage` | topic | `robot_state_publisher` | `move_group`, RViz |
 | `/display_planned_path` | `moveit_msgs/DisplayTrajectory` | topic | `move_group` | RViz |
@@ -185,6 +187,7 @@ sequenceDiagram
 | `robotic_arm_moveit_config` | MoveIt2 config: planning groups, IK, controllers, joint limits | `config/robotic_arm.srdf`, `config/kinematics.yaml`, `config/moveit_controllers.yaml` |
 | `robotic_arm_interfaces` | ROS2 action/service/message definitions for arm control | `action/*.action`, `srv/ListObjects.srv`, `msg/ObjectInfo.msg` |
 | `robotic_arm_bringup` | Application logic: action server, motion library, CLI client, scene setup | `motion_server.py`, `arm_controller.py`, `arm_cli.py`, `scene_manager.py`, `config/objects.yaml` |
+| `robotic_arm_perception` | Camera + vision pipeline (Phase 4, planned) | `camera_node.py`, `vision_node.py` — see [`doc/camera_vision.md`](camera_vision.md) |
 
 ---
 

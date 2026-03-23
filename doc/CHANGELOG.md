@@ -5,6 +5,20 @@ Patterns and constraints: [MEMORY.md](MEMORY.md). Architecture: [architecture.md
 
 ---
 
+## 2026-03-23 — Phase 4 design session
+
+### Phase 4 — Camera + Vision pipeline designed
+- **Approach**: Synthetic camera (no Gazebo) + real HSV color detection. `camera_node` renders MoveIt scene as top-down orthographic image; `vision_node` detects objects from pixels only (no ground truth access).
+- **Package**: New `robotic_arm_perception` — clean separation, entire package swappable when migrating to Gazebo.
+- **New messages**: `DetectedObject.msg` / `DetectedObjects.msg` in `robotic_arm_interfaces`.
+- **Color config**: `vision_node` reads `objects.yaml` for color→name mapping (single source of truth).
+- **Z handling**: Fixed Z from `objects.yaml` — top-down camera can't see height.
+- **Existing changes**: `motion_server` gets `/detected_objects` subscriber; launch file adds new nodes.
+- **Swap boundary**: `/camera/image_raw` topic. Everything downstream (vision_node, motion_server) works unchanged with Gazebo or real HW.
+- **Design doc**: [`doc/camera_vision.md`](camera_vision.md) — includes mermaid diagrams.
+
+---
+
 ## 2026-03-17 — URDF visual overhaul + place() START_STATE_IN_COLLISION fix
 
 ### place() lift collision — root cause and fix
