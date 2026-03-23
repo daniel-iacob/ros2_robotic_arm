@@ -5,17 +5,26 @@ Patterns and constraints: [MEMORY.md](MEMORY.md). Architecture: [architecture.md
 
 ---
 
-## 2026-03-23 — Phase 4 design session
+## 2026-03-23 — Phase 4 implementation (blocked by camera_node bug)
 
-### Phase 4 — Camera + Vision pipeline designed
-- **Approach**: Synthetic camera (no Gazebo) + real HSV color detection. `camera_node` renders MoveIt scene as top-down orthographic image; `vision_node` detects objects from pixels only (no ground truth access).
-- **Package**: New `robotic_arm_perception` — clean separation, entire package swappable when migrating to Gazebo.
-- **New messages**: `DetectedObject.msg` / `DetectedObjects.msg` in `robotic_arm_interfaces`.
-- **Color config**: `vision_node` reads `objects.yaml` for color→name mapping (single source of truth).
-- **Z handling**: Fixed Z from `objects.yaml` — top-down camera can't see height.
-- **Existing changes**: `motion_server` gets `/detected_objects` subscriber; launch file adds new nodes.
-- **Swap boundary**: `/camera/image_raw` topic. Everything downstream (vision_node, motion_server) works unchanged with Gazebo or real HW.
-- **Design doc**: [`doc/camera_vision.md`](camera_vision.md) — includes mermaid diagrams.
+### Phase 4 — Camera + Vision pipeline implemented (not working yet)
+
+**What was done:**
+- Created `robotic_arm_perception` package: `camera_node.py` (synthetic top-down camera), `vision_node.py` (real HSV detection)
+- Added `DetectedObject.msg` / `DetectedObjects.msg` to `robotic_arm_interfaces`
+- Updated `motion_server.py` with `/detected_objects` subscriber — updates object positions from vision
+- Updated launch file to include camera_node + vision_node
+- Updated `conftest.py` teardown to kill camera_node + vision_node
+- Added 4 new integration tests for vision pipeline
+
+**What's broken:**
+- `camera_node` crashes on startup due to executor deadlock
+- Root cause: `_get_scene_objects()` calls `rclpy.spin_once(self, timeout_sec=0.01)` while `rclpy.spin(node)` is running in `main()` — same deadlock pattern as the Phase 3 `spin_until_future_complete` bug
+- Fix: replace `rclpy.spin_once(self)` with `time.sleep(0.01)` polling (the main `rclpy.spin()` already processes service response futures)
+- Until fixed: no images published → vision_node detects nothing → 4 new tests will fail
+
+### Lesson learned
+- The executor deadlock constraint applies to ALL spin variants: `spin_until_future_complete`, `spin_once`, etc. A node already being spun by `rclpy.spin()` cannot call any of these on itself.
 
 ---
 

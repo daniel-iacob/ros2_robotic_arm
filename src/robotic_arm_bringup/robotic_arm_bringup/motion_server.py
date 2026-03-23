@@ -24,7 +24,7 @@ from robotic_arm_interfaces.action import (
     Place,
     Reset,
 )
-from robotic_arm_interfaces.msg import ObjectInfo
+from robotic_arm_interfaces.msg import DetectedObjects, ObjectInfo
 from robotic_arm_interfaces.srv import ListObjects
 
 
@@ -83,6 +83,14 @@ class MotionServer(Node):
         self._list_objects_srv = self.create_service(
             ListObjects, "/list_objects",
             self._list_objects_callback,
+            callback_group=cb_group,
+        )
+
+        # Subscribe to vision detections
+        self._detection_sub = self.create_subscription(
+            DetectedObjects, "/detected_objects",
+            self._detected_objects_callback,
+            10,
             callback_group=cb_group,
         )
 
@@ -206,6 +214,26 @@ class MotionServer(Node):
             goal_handle, CloseGripper.Result, success,
             "Gripper closed" if success else "Failed to close gripper",
         )
+
+    # ── Detection callback ─────────────────────────────────────────────
+
+    def _detected_objects_callback(self, msg: DetectedObjects):
+        """Update object positions from vision detections."""
+        with self._lock:
+            for det in msg.objects:
+                if det.name in self._controller.objects and det.confidence > 0.5:
+                    old = self._controller.objects[det.name]
+                    new = (det.x, det.y, det.z)
+                    # Log significant position changes (> 2cm)
+                    dx = abs(old[0] - new[0])
+                    dy = abs(old[1] - new[1])
+                    if dx > 0.02 or dy > 0.02:
+                        self.get_logger().info(
+                            f"Vision update: {det.name} "
+                            f"({old[0]:.3f},{old[1]:.3f}) → ({new[0]:.3f},{new[1]:.3f}) "
+                            f"conf={det.confidence:.2f}"
+                        )
+                    self._controller.objects[det.name] = new
 
     # ── Service callback ──────────────────────────────────────────────
 

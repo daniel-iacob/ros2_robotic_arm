@@ -73,7 +73,7 @@ flowchart TD
         notimpl([not implemented]):::planned
     end
 
-    class llm_interface_node,validator_node,camera_node,vision_node,hw_drivers,real_robot planned
+    class llm_interface_node,validator_node,hw_drivers,real_robot planned
 
     llm_interface_node --> validator_node
     validator_node --> motion_server
@@ -148,7 +148,7 @@ sequenceDiagram
 - [x] **Phase 1** — CLI motion control (`move_to_cube`), scene manager, MoveIt2 integration, pick-and-place
 - [x] **Phase 2** — Importable motion library (`ArmController`) + YAML config + thin CLI (`arm`)
 - [x] **Phase 3** — `motion_server` node: persistent ROS2 action server; CLI rewritten as action client
-- [ ] **Phase 4** — Camera + vision: synthetic `camera_node` + real `vision_node` (HSV detection). New `robotic_arm_perception` package. Design doc: [`doc/camera_vision.md`](camera_vision.md)
+- [ ] **Phase 4** — Camera + vision: code written, **blocked by camera_node executor deadlock**. New `robotic_arm_perception` package. Design doc: [`doc/camera_vision.md`](camera_vision.md)
 - [ ] **Phase 5** — LLM interface: `llm_interface_node` + `validator_node`; natural language → validated action goals → `motion_server`
 
 ---
@@ -168,8 +168,9 @@ sequenceDiagram
 | `/planning_scene` | `moveit_msgs/PlanningScene` | topic | `scene_manager`, `motion_server` (fallback) | `move_group` |
 | `/apply_planning_scene` | `moveit_msgs/ApplyPlanningScene` | service | `move_group` (server) | `motion_server` (client) |
 | `/get_planning_scene` | `moveit_msgs/GetPlanningScene` | service | `move_group` (server) | `motion_server` (client) |
-| `/camera/image_raw` | `sensor_msgs/Image` | topic | `camera_node` (planned) | `vision_node` |
-| `/detected_objects` | `robotic_arm_interfaces/DetectedObjects` | topic | `vision_node` (planned) | `motion_server` |
+| `/camera/image_raw` | `sensor_msgs/Image` | topic | `camera_node` | `vision_node` |
+| `/camera/camera_info` | `sensor_msgs/CameraInfo` | topic | `camera_node` | — |
+| `/detected_objects` | `robotic_arm_interfaces/DetectedObjects` | topic | `vision_node` | `motion_server` |
 | `/joint_states` | `sensor_msgs/JointState` | topic | `joint_state_broadcaster` | `motion_server`, `robot_state_publisher` |
 | `/tf` / `/tf_static` | `tf2_msgs/TFMessage` | topic | `robot_state_publisher` | `move_group`, RViz |
 | `/display_planned_path` | `moveit_msgs/DisplayTrajectory` | topic | `move_group` | RViz |
@@ -185,9 +186,9 @@ sequenceDiagram
 |---------|------|-----------|
 | `robotic_arm_description` | Robot model: URDF/xacro, meshes, TF structure | `urdf/robotic_arm.urdf.xacro` |
 | `robotic_arm_moveit_config` | MoveIt2 config: planning groups, IK, controllers, joint limits | `config/robotic_arm.srdf`, `config/kinematics.yaml`, `config/moveit_controllers.yaml` |
-| `robotic_arm_interfaces` | ROS2 action/service/message definitions for arm control | `action/*.action`, `srv/ListObjects.srv`, `msg/ObjectInfo.msg` |
+| `robotic_arm_interfaces` | ROS2 action/service/message definitions for arm control | `action/*.action`, `srv/ListObjects.srv`, `msg/ObjectInfo.msg`, `msg/DetectedObject.msg`, `msg/DetectedObjects.msg` |
 | `robotic_arm_bringup` | Application logic: action server, motion library, CLI client, scene setup | `motion_server.py`, `arm_controller.py`, `arm_cli.py`, `scene_manager.py`, `config/objects.yaml` |
-| `robotic_arm_perception` | Camera + vision pipeline (Phase 4, planned) | `camera_node.py`, `vision_node.py` — see [`doc/camera_vision.md`](camera_vision.md) |
+| `robotic_arm_perception` | Camera + vision pipeline (Phase 4, implemented but camera_node has startup bug) | `camera_node.py`, `vision_node.py` — see [`doc/camera_vision.md`](camera_vision.md) |
 
 ---
 
@@ -254,4 +255,6 @@ These constraints have caused bugs; remember them when making changes:
 
 7. **KDL IK workspace**: 3-DOF arm cannot reach all XYZ positions. Minimum reachable Z depends on XY radius. At radius ~0.36m (e.g. 0.2, 0.3), minimum Z ≈ 0.4. At radius ~0.41m (e.g. 0.4, 0.1), Z = 0.3 is reachable. `place()` auto-retries at Z+0.05 increments.MEMORY.md
 
-8. **`time.sleep()` does NOT spin the ROS2 executor** — topic publishes are queued but not delivered to MoveIt until the next `spin_once()` or `spin_until_future_complete()`. For planning scene updates that must be processed before the next motion, use the `/apply_planning_scene` service (synchronous), not the `/planning_scene` topic.
+8. **Never call `rclpy.spin_once(self)` on a node spun by `rclpy.spin()`** — same executor deadlock as `spin_until_future_complete`. Use `time.sleep()` polling instead — `rclpy.spin()` in `main()` already processes callbacks including service response futures. This bit `camera_node` in Phase 4.
+
+9. **`time.sleep()` does NOT spin the ROS2 executor** — topic publishes are queued but not delivered to MoveIt until the next `spin_once()` or `spin_until_future_complete()`. For planning scene updates that must be processed before the next motion, use the `/apply_planning_scene` service (synchronous), not the `/planning_scene` topic.

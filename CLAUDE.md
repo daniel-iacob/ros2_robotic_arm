@@ -24,16 +24,18 @@ Learn ROS2 concepts with a simulated robotic arm + gripper + camera → eventual
 
 ## Quick Reference
 
-**What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Phase 3 complete, Phase 4 designed — persistent action server + CLI client with MoveIt2 mock hardware. No Gazebo, no camera yet, no LLM.
+**What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Phase 4 in progress — camera + vision pipeline code written but camera_node has a startup bug. No Gazebo, no LLM.
 
 **Quick start**: `./run.sh sim` → launches RViz + MoveIt | `./run.sh tests` → runs integration tests
 
 **Running nodes** (after `./run.sh sim`):
-- `motion_server` — persistent action server, holds `ArmController` in memory
+- `motion_server` — persistent action server, holds `ArmController` in memory, subscribes to `/detected_objects`
 - `scene_manager` — one-shot, spawns objects from `objects.yaml` into MoveIt
 - `move_group` — MoveIt2 planning server
 - `arm_controller` / `gripper_controller` / `joint_state_broadcaster` — ros2_control
 - `robot_state_publisher` + `rviz2`
+- `camera_node` — synthetic top-down camera (Phase 4, **currently broken** — executor deadlock)
+- `vision_node` — HSV color detection from pixels (Phase 4, waiting on camera_node fix)
 
 **Entry points**:
 - CLI: `ros2 run robotic_arm_bringup arm <command> [args]` (thin action client)
@@ -47,9 +49,12 @@ Learn ROS2 concepts with a simulated robotic arm + gripper + camera → eventual
 - Action server: `src/robotic_arm_bringup/robotic_arm_bringup/motion_server.py`
 - CLI client: `src/robotic_arm_bringup/robotic_arm_bringup/arm_cli.py`
 - Action/service definitions: `src/robotic_arm_interfaces/`
+- Vision messages: `src/robotic_arm_interfaces/msg/DetectedObject.msg`, `DetectedObjects.msg`
 - Object definitions: `src/robotic_arm_bringup/config/objects.yaml`
 - Scene setup: `src/robotic_arm_bringup/robotic_arm_bringup/scene_manager.py`
 - MoveIt config: `src/robotic_arm_moveit_config/`
+- Synthetic camera: `src/robotic_arm_perception/robotic_arm_perception/camera_node.py`
+- Vision detection: `src/robotic_arm_perception/robotic_arm_perception/vision_node.py`
 - Launch: `src/robotic_arm_bringup/launch/arm_system.launch.py`
 
 ---
@@ -70,6 +75,7 @@ These have caused bugs. Always remember them.
 | Use `/apply_planning_scene` service (not topic) for attach/detach | `time.sleep()` doesn't spin executor → race condition |
 | Mimic joints: no command interface in ros2_control | ros2_control crash on startup |
 | Never call `spin_until_future_complete` on a node with an active executor | Deadlock — use `_wait_for_future()` instead |
+| Never call `rclpy.spin_once(self)` on a node spun by `rclpy.spin()` | Executor deadlock — use `time.sleep()` polling instead |
 
 ---
 
@@ -89,7 +95,7 @@ These have caused bugs. Always remember them.
 - ✓ place() visual fixed: object stays attached during lowering
 - ✓ Kuka-style URDF: orange gradient (c1–c4) + horizontal cylindrical knuckles at joints
 - ✓ RViz shows URDF colors (Scene Robot → Show Robot Visual: true)
-- ✗ Camera / vision (Phase 4)
+- ~ Camera + vision code written (Phase 4) — **not working**: camera_node executor deadlock
 - ✗ LLM integration (Phase 5)
 
 ## Roadmap
@@ -97,7 +103,7 @@ These have caused bugs. Always remember them.
 - [x] **Phase 1** — CLI motion control, MoveIt2 integration, pick-and-place
 - [x] **Phase 2** — Importable `ArmController` library + YAML config + thin CLI
 - [x] **Phase 3** — Persistent `motion_server` action server + CLI as action client
-- [ ] **Phase 4** — Camera + vision: synthetic `camera_node` + real `vision_node` (HSV detection) in new `robotic_arm_perception` package. Design: [`doc/camera_vision.md`](doc/camera_vision.md)
+- [ ] **Phase 4** — Camera + vision: code written, **blocked by camera_node executor deadlock**. Fix: replace `rclpy.spin_once(self)` with `time.sleep()` polling in `_get_scene_objects()`. Design: [`doc/camera_vision.md`](doc/camera_vision.md)
 - [ ] **Phase 5** — LLM interface: `llm_interface_node` + `validator_node` → natural language → motion server actions
 
 ## Known Limitations
@@ -109,10 +115,9 @@ These have caused bugs. Always remember them.
 
 ---
 
-## Latest Session Changes (2026-03-17)
+## Latest Session Changes (2026-03-23)
 
-- **place() lift collision fixed**: `left_finger - red_cylinder` START_STATE_IN_COLLISION after place. Root cause: object re-added to scene while arm still at release_z. Fix: move arm +4cm before re-adding object — no geometric overlap possible when object isn't in scene yet.
-- **URDF visual overhaul**: Kuka orange gradient (c1–c4) + dark gripper (c5–c6). Horizontal cylindrical knuckles at joint_2 and joint_3. Collision/joint/ros2_control blocks unchanged.
-- **RViz colors**: MotionPlanning → Scene Robot → `Show Robot Visual: true`, `Robot Alpha: 1`.
-- **Lesson**: Only edit `<visual>` blocks in URDF. Any collision or joint origin change — even small — can break kinematics and fail tests.
-- **Phase 4 designed**: Synthetic camera (no Gazebo) + real HSV detection in new `robotic_arm_perception` package. Top-down orthographic camera. Color config + Z height from `objects.yaml`. Full design in [`doc/camera_vision.md`](doc/camera_vision.md).
+- **Phase 4 implementation written**: All code for camera + vision pipeline created and building. New `robotic_arm_perception` package with `camera_node` (synthetic) and `vision_node` (real HSV). New `DetectedObject`/`DetectedObjects` messages. `motion_server` updated with `/detected_objects` subscriber. 4 new integration tests added.
+- **BLOCKED: camera_node executor deadlock**: `camera_node.py:_get_scene_objects()` calls `rclpy.spin_once(self)` while the node is already spun by `rclpy.spin(node)` in `main()`. Node crashes on startup → no images → vision pipeline dead.
+- **Fix needed**: Replace `rclpy.spin_once(self, timeout_sec=0.01)` with `time.sleep(0.01)` — `rclpy.spin()` already processes callbacks including service response futures.
+- **Lesson**: The executor deadlock constraint applies to `spin_once` too, not just `spin_until_future_complete`. Any node spun by `rclpy.spin()` cannot also call `rclpy.spin_once(self)`.

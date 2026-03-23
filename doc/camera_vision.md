@@ -1,5 +1,7 @@
 # Phase 4 — Camera + Vision Pipeline
 
+> **Status**: Code written, builds clean, **not working**. `camera_node` crashes on startup due to executor deadlock (`rclpy.spin_once(self)` called while `rclpy.spin()` active). Fix: replace with `time.sleep()` polling. See CHANGELOG.md for details.
+
 ## Overview
 
 Replace hardcoded object positions (`objects.yaml`) with a real vision pipeline that discovers positions from camera images. No Gazebo — uses a synthetic camera that renders the MoveIt scene. The detection algorithm is real and works from pixels only.

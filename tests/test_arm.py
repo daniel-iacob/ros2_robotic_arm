@@ -194,3 +194,82 @@ def test_verify_positions_after_reset():
     assert "0.450" in out, f"expected blue_cylinder x=0.450 after reset:\n{out}"
     assert "-0.450" in out, f"expected red_cylinder y=-0.450 after reset:\n{out}"
     assert "-0.300" in out, f"expected green_cylinder y=-0.300 after reset:\n{out}"
+
+
+# ── Vision pipeline tests ────────────────────────────────────────────────────
+
+TOPIC_TIMEOUT = 15
+
+
+def ros2_topic(*args, timeout=TOPIC_TIMEOUT):
+    """Run a ros2 topic command, return (exit_code, output)."""
+    cmd = ["ros2", "topic", *args]
+    cmd_str = " ".join(cmd)
+    print(f"\n  >>> {cmd_str}")
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    output = result.stdout + result.stderr
+    for line in output.strip().splitlines():
+        print(f"  {line}")
+    return result.returncode, output
+
+
+def test_camera_topic_active():
+    """Verify /camera/image_raw topic has a publisher."""
+    rc, out = ros2_topic("info", "/camera/image_raw")
+    assert rc == 0, f"topic info failed:\n{out}"
+    assert "Publisher count: 0" not in out, f"no publishers on /camera/image_raw:\n{out}"
+
+
+def test_detected_objects_topic_active():
+    """Verify /detected_objects topic has a publisher."""
+    rc, out = ros2_topic("info", "/detected_objects")
+    assert rc == 0, f"topic info failed:\n{out}"
+    assert "Publisher count: 0" not in out, f"no publishers on /detected_objects:\n{out}"
+
+
+def test_all_objects_detected():
+    """Verify vision detects all 4 objects from the scene."""
+    rc, out = ros2_topic("echo", "/detected_objects", "--once", timeout=30)
+    assert rc == 0, f"topic echo failed:\n{out}"
+    assert "blue_cylinder" in out, f"blue_cylinder not detected:\n{out}"
+    assert "red_cylinder" in out, f"red_cylinder not detected:\n{out}"
+    assert "green_cylinder" in out, f"green_cylinder not detected:\n{out}"
+    assert "basket" in out, f"basket not detected:\n{out}"
+
+
+def test_detected_positions_match_scene():
+    """Verify detected positions are close to YAML defaults (within 3cm)."""
+    rc, out = ros2_topic("echo", "/detected_objects", "--once", timeout=30)
+    assert rc == 0, f"topic echo failed:\n{out}"
+
+    # Parse detected positions from echo output
+    # Expected from objects.yaml: blue(0.45,0.0), red(0.0,-0.45), green(0.30,-0.30), basket(0.4,0.25)
+    expected = {
+        "blue_cylinder": (0.45, 0.0),
+        "red_cylinder": (0.0, -0.45),
+        "green_cylinder": (0.30, -0.30),
+        "basket": (0.4, 0.25),
+    }
+
+    for name, (exp_x, exp_y) in expected.items():
+        assert name in out, f"{name} not in detection output:\n{out}"
+        # Extract x and y values after the object name
+        # The echo format has fields like: name: blue_cylinder\n  x: 0.45\n  y: 0.0
+        section = out[out.index(name):]
+        lines = section.split("\n")
+        x_val = None
+        y_val = None
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("x:"):
+                x_val = float(stripped.split(":")[1])
+            elif stripped.startswith("y:"):
+                y_val = float(stripped.split(":")[1])
+                break  # y comes after x, so we have both
+        assert x_val is not None and y_val is not None, \
+            f"could not parse x,y for {name}:\n{section[:200]}"
+        tolerance = 0.03  # 3cm — accounts for pixel quantization
+        assert abs(x_val - exp_x) < tolerance, \
+            f"{name} x: expected {exp_x}, got {x_val}"
+        assert abs(y_val - exp_y) < tolerance, \
+            f"{name} y: expected {exp_y}, got {y_val}"
