@@ -1,6 +1,6 @@
 # Phase 4 — Camera + Vision Pipeline
 
-> **Status**: Code written, builds clean, **not working**. `camera_node` crashes on startup due to executor deadlock (`rclpy.spin_once(self)` called while `rclpy.spin()` active). Fix: replace with `time.sleep()` polling. See CHANGELOG.md for details.
+> **Status**: 26/28 tests passing. Camera renders correctly. Two vision position tests failing — `motion_server` position updates from vision temporarily disabled. See CHANGELOG.md for bug history.
 
 ## Overview
 

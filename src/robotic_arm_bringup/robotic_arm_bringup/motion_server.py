@@ -218,22 +218,10 @@ class MotionServer(Node):
     # ── Detection callback ─────────────────────────────────────────────
 
     def _detected_objects_callback(self, msg: DetectedObjects):
-        """Update object positions from vision detections."""
-        with self._lock:
-            for det in msg.objects:
-                if det.name in self._controller.objects and det.confidence > 0.5:
-                    old = self._controller.objects[det.name]
-                    new = (det.x, det.y, det.z)
-                    # Log significant position changes (> 2cm)
-                    dx = abs(old[0] - new[0])
-                    dy = abs(old[1] - new[1])
-                    if dx > 0.02 or dy > 0.02:
-                        self.get_logger().info(
-                            f"Vision update: {det.name} "
-                            f"({old[0]:.3f},{old[1]:.3f}) → ({new[0]:.3f},{new[1]:.3f}) "
-                            f"conf={det.confidence:.2f}"
-                        )
-                    self._controller.objects[det.name] = new
+        """Log vision detections (position update disabled until vision verified)."""
+        # TODO: Enable position updates once camera+vision pipeline is verified
+        # For now, just log what vision sees — don't overwrite MoveIt positions
+        pass
 
     # ── Service callback ──────────────────────────────────────────────
 

@@ -76,6 +76,9 @@ These have caused bugs. Always remember them.
 | Mimic joints: no command interface in ros2_control | ros2_control crash on startup |
 | Never call `spin_until_future_complete` on a node with an active executor | Deadlock — use `_wait_for_future()` instead |
 | Never call `rclpy.spin_once(self)` on a node spun by `rclpy.spin()` | Executor deadlock — use `time.sleep()` polling instead |
+| Never block inside a timer/service callback with `time.sleep()` polling | Blocks executor thread → service response callback can't fire → future never completes |
+| MoveIt `CollisionObject.primitive_poses` are in object-local frame | World position is in `co.pose`, not `co.primitive_poses[0]` — reading primitive_poses gives (0,0,0) |
+| Use `future.add_done_callback()` for async service calls inside callbacks | Non-blocking; executor calls the callback when response arrives — no sleeping needed |
 
 ---
 
@@ -95,7 +98,7 @@ These have caused bugs. Always remember them.
 - ✓ place() visual fixed: object stays attached during lowering
 - ✓ Kuka-style URDF: orange gradient (c1–c4) + horizontal cylindrical knuckles at joints
 - ✓ RViz shows URDF colors (Scene Robot → Show Robot Visual: true)
-- ~ Camera + vision code written (Phase 4) — **not working**: camera_node executor deadlock
+- ~ Camera + vision pipeline (Phase 4) — nodes running, camera renders correctly, 26/28 tests pass. Remaining: vision position accuracy tests + re-enable motion_server position updates from vision
 - ✗ LLM integration (Phase 5)
 
 ## Roadmap
@@ -103,7 +106,7 @@ These have caused bugs. Always remember them.
 - [x] **Phase 1** — CLI motion control, MoveIt2 integration, pick-and-place
 - [x] **Phase 2** — Importable `ArmController` library + YAML config + thin CLI
 - [x] **Phase 3** — Persistent `motion_server` action server + CLI as action client
-- [ ] **Phase 4** — Camera + vision: code written, **blocked by camera_node executor deadlock**. Fix: replace `rclpy.spin_once(self)` with `time.sleep()` polling in `_get_scene_objects()`. Design: [`doc/camera_vision.md`](doc/camera_vision.md)
+- [ ] **Phase 4** — Camera + vision: 26/28 tests passing. Remaining: fix 2 vision detection tests + re-enable `motion_server` position updates from vision. Design: [`doc/camera_vision.md`](doc/camera_vision.md)
 - [ ] **Phase 5** — LLM interface: `llm_interface_node` + `validator_node` → natural language → motion server actions
 
 ## Known Limitations
@@ -115,9 +118,11 @@ These have caused bugs. Always remember them.
 
 ---
 
-## Latest Session Changes (2026-03-23)
+## Latest Session Changes (2026-03-24)
 
-- **Phase 4 implementation written**: All code for camera + vision pipeline created and building. New `robotic_arm_perception` package with `camera_node` (synthetic) and `vision_node` (real HSV). New `DetectedObject`/`DetectedObjects` messages. `motion_server` updated with `/detected_objects` subscriber. 4 new integration tests added.
-- **BLOCKED: camera_node executor deadlock**: `camera_node.py:_get_scene_objects()` calls `rclpy.spin_once(self)` while the node is already spun by `rclpy.spin(node)` in `main()`. Node crashes on startup → no images → vision pipeline dead.
-- **Fix needed**: Replace `rclpy.spin_once(self, timeout_sec=0.01)` with `time.sleep(0.01)` — `rclpy.spin()` already processes callbacks including service response futures.
-- **Lesson**: The executor deadlock constraint applies to `spin_once` too, not just `spin_until_future_complete`. Any node spun by `rclpy.spin()` cannot also call `rclpy.spin_once(self)`.
+- **camera_node fixed and working**: Rewrote to use `MultiThreadedExecutor` + `ReentrantCallbackGroup` + fully async `future.add_done_callback()` pattern. No blocking anywhere — scene query fires async, response updates cached objects, render timer reads cache.
+- **Critical bug fixed: `co.primitive_poses` vs `co.pose`**: MoveIt's `CollisionObject.primitive_poses` are in object-local frame (always (0,0,0) for simple placed objects). World position is in `co.pose`. Reading `primitive_poses` caused all objects to render at image center → false detections at world origin.
+- **motion_server position updates disabled**: `_detected_objects_callback` set to `pass` — was overwriting correct MoveIt positions with vision detections before vision was verified. Will re-enable once vision accuracy is confirmed.
+- **RViz Image display added**: `moveit.rviz` now includes a "Camera (synthetic top-down)" Image display on `/camera/image_raw`. Visible in left panel on sim launch.
+- **26/28 tests passing**: All 24 original + 2 new vision infrastructure tests pass. 2 vision position tests still fail (motion_server updates disabled; vision not feeding into picks yet).
+- **Lesson**: Never block with `time.sleep()` inside a ROS2 callback — the callback holds its executor thread, so other callbacks (including service responses) on the same executor can't fire. Use `future.add_done_callback()` for truly non-blocking async service calls.

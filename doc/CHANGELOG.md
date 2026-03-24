@@ -5,26 +5,36 @@ Patterns and constraints: [MEMORY.md](MEMORY.md). Architecture: [architecture.md
 
 ---
 
-## 2026-03-23 — Phase 4 implementation (blocked by camera_node bug)
+## 2026-03-24 — Phase 4 camera + vision pipeline fixed (26/28 tests)
 
-### Phase 4 — Camera + Vision pipeline implemented (not working yet)
+### camera_node — two bugs found and fixed
 
-**What was done:**
-- Created `robotic_arm_perception` package: `camera_node.py` (synthetic top-down camera), `vision_node.py` (real HSV detection)
-- Added `DetectedObject.msg` / `DetectedObjects.msg` to `robotic_arm_interfaces`
-- Updated `motion_server.py` with `/detected_objects` subscriber — updates object positions from vision
-- Updated launch file to include camera_node + vision_node
-- Updated `conftest.py` teardown to kill camera_node + vision_node
-- Added 4 new integration tests for vision pipeline
+**Bug 1: executor deadlock (original)**
+- `_get_scene_objects()` called `rclpy.spin_once(self)` while `rclpy.spin(node)` active in `main()` → node crashed on startup
+- First attempt: replace with `time.sleep()` polling. Didn't work — `time.sleep()` inside a timer callback blocks the executor thread itself, so the service response callback can't fire on the same executor → future never completes → timeout → empty scene → blank images
 
-**What's broken:**
-- `camera_node` crashes on startup due to executor deadlock
-- Root cause: `_get_scene_objects()` calls `rclpy.spin_once(self, timeout_sec=0.01)` while `rclpy.spin(node)` is running in `main()` — same deadlock pattern as the Phase 3 `spin_until_future_complete` bug
-- Fix: replace `rclpy.spin_once(self)` with `time.sleep(0.01)` polling (the main `rclpy.spin()` already processes service response futures)
-- Until fixed: no images published → vision_node detects nothing → 4 new tests will fail
+**Bug 2: blocking inside callback**
+- Any `time.sleep()` polling loop inside a ROS2 callback holds the executor thread. Even with `MultiThreadedExecutor`, if all threads are blocked waiting, service responses can't be delivered.
+- Fix: use `future.add_done_callback(self._scene_response_callback)` — fully non-blocking. Executor calls the callback when the service responds, on whichever thread is free.
+- Final design: `_scene_query_callback` fires at 5Hz, sends async request, attaches done callback, returns immediately. `_scene_response_callback` updates `_cached_objects`. `_render_callback` fires at 10Hz, reads cache, publishes image. All three are non-blocking.
 
-### Lesson learned
-- The executor deadlock constraint applies to ALL spin variants: `spin_until_future_complete`, `spin_once`, etc. A node already being spun by `rclpy.spin()` cannot call any of these on itself.
+**Bug 3: wrong pose field**
+- Camera rendered all objects at world origin (0,0,0) → vision detected false "red" and "basket" at pixel center
+- Root cause: code read `co.primitive_poses[0].position` — this is the pose of the primitive *within the object's local frame* (always identity for simple objects). World position is in `co.pose.position`.
+- Fix: use `co.pose.position.x/y` for world coordinates.
+
+### motion_server position updates disabled
+- `_detected_objects_callback` set to `pass` — was overwriting correct MoveIt positions with unverified vision data, breaking 12 tests
+- Will re-enable once vision accuracy tests pass
+
+### RViz camera display
+- Added `Image` display to `moveit.rviz` on `/camera/image_raw` — shows synthetic top-down view in left panel
+
+### Test results
+- 26/28 passing: all 24 original + 2 vision infrastructure (topic active, publisher count)
+- 2 failing: `test_all_objects_detected`, `test_detected_positions_match_scene` — vision pipeline works but motion_server update disabled
+
+## 2026-03-23 — Phase 4 implementation written
 
 ---
 
