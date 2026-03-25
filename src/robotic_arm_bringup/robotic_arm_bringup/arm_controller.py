@@ -227,6 +227,10 @@ class ArmController:
             self.logger.error(f"Unknown object: {object_name}")
             return False
 
+        if not self._is_object_attached(object_name):
+            self.logger.error(f"Cannot place {object_name}: not currently held")
+            return False
+
         def _report(step, progress):
             if on_progress:
                 on_progress(step, progress)
