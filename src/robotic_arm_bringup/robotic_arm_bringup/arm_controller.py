@@ -265,17 +265,14 @@ class ArmController:
         self.open_gripper()
         time.sleep(0.1)
 
-        # Step 4: Move up slightly before re-adding object (object not in scene yet — no collision)
-        self._move_to_position(x, y, release_z + 0.04)
-
-        # Step 5: Re-add object at release position (arm is 4cm clear — no collision)
-        _report("updating scene", 0.60)
-        self.update_object_position(object_name, x, y, release_z)
-        self._clear_position_cache(object_name)
-
-        # Step 6: Lift away (arm already clear of object)
-        _report("lifting away", 0.80)
+        # Step 4: Lift away BEFORE re-adding object (object not in scene — no collision possible)
+        _report("lifting away", 0.60)
         self._move_to_position(x, y, release_z + 0.15)
+
+        # Step 5: Re-add object at intended position (arm is well clear — safe)
+        _report("updating scene", 0.80)
+        self.update_object_position(object_name, x, y, z)
+        self._clear_position_cache(object_name)
 
         self.logger.info(f"Placed: {object_name}")
         return True
@@ -548,6 +545,29 @@ class ArmController:
         with self._joint_state_lock:
             self._current_joint_state = msg
 
+    def _wait_for_fresh_joint_state(self, timeout_sec: float = 1.0):
+        """Wait until /joint_states delivers a reading newer than the current one.
+
+        Called after arm motion completes. The action result arrives before ros2_control
+        publishes the final /joint_states — without this wait, the next plan starts
+        from a stale start state and MoveIt rejects it (START_STATE_IN_COLLISION).
+        Safe to call from MultiThreadedExecutor callbacks: sleep() releases the
+        thread so other executor threads can process the joint_state subscription.
+        """
+        with self._joint_state_lock:
+            stale = self._current_joint_state
+            stale_stamp = (stale.header.stamp.sec, stale.header.stamp.nanosec) if stale else None
+
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            with self._joint_state_lock:
+                cur = self._current_joint_state
+                if cur is not None:
+                    cur_stamp = (cur.header.stamp.sec, cur.header.stamp.nanosec)
+                    if cur_stamp != stale_stamp:
+                        return
+            time.sleep(0.01)
+
     def _get_current_robot_state(self) -> RobotState:
         with self._joint_state_lock:
             if self._current_joint_state is None:
@@ -639,6 +659,7 @@ class ArmController:
 
         if code == 1:
             self.logger.info("Motion completed successfully")
+            self._wait_for_fresh_joint_state()
             return True
         else:
             self.logger.error(f"Motion failed with error: {code_str}")

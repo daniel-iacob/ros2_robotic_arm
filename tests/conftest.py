@@ -6,7 +6,7 @@ import time
 import pytest
 
 STARTUP_TIMEOUT = 90
-SIM_LOG = "/tmp/sim_test.log"
+SIM_LOG = "log/test/sim.log"
 
 
 def _kill_sim_processes():

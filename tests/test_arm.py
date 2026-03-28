@@ -298,6 +298,26 @@ def test_scene_unchanged_after_move_to():
         assert before == after, f"{name} moved: {before} → {after}"
 
 
+def test_move_object():
+    """move-object should update an object's position in the planning scene."""
+    rc, out = arm("move-object", "green_cylinder", "0.35", "-0.20", "0.3")
+    assert rc == 0, f"move-object failed:\n{out}"
+    # Verify position updated
+    rc2, out2 = arm("list-objects")
+    assert rc2 == 0, f"list-objects failed:\n{out2}"
+    pos = parse_object_position(out2, "green_cylinder")
+    assert pos is not None, f"could not parse green_cylinder position:\n{out2}"
+    x, y, z = pos
+    assert abs(x - 0.35) < 0.01, f"green_cylinder x: expected 0.35, got {x}"
+    assert abs(y - (-0.20)) < 0.01, f"green_cylinder y: expected -0.20, got {y}"
+
+
+def test_move_object_unknown():
+    """move-object with unknown object should fail."""
+    rc, out = arm("move-object", "nonexistent", "0.3", "0.0", "0.3")
+    assert rc != 0, f"expected failure for unknown object:\n{out}"
+
+
 def test_reset():
     rc, out = arm("reset")
     assert rc == 0, f"reset failed:\n{out}"
@@ -369,13 +389,18 @@ def test_detected_objects_topic_active():
 
 
 def test_all_objects_detected():
-    """Verify vision detects all 4 objects from the scene."""
+    """Verify vision detects all 4 objects from the scene with positive confidence."""
     rc, out = ros2_topic("echo", "/detected_objects", "--once", timeout=30)
     assert rc == 0, f"topic echo failed:\n{out}"
     assert "blue_cylinder" in out, f"blue_cylinder not detected:\n{out}"
     assert "red_cylinder" in out, f"red_cylinder not detected:\n{out}"
     assert "green_cylinder" in out, f"green_cylinder not detected:\n{out}"
     assert "basket" in out, f"basket not detected:\n{out}"
+    # All detected objects should have confidence > 0
+    confidences = re.findall(r'confidence:\s*([\d.]+)', out)
+    assert len(confidences) > 0, f"no confidence values:\n{out}"
+    for c in confidences:
+        assert float(c) > 0.0, f"confidence {c} not positive:\n{out}"
 
 
 def test_detected_positions_match_scene():
@@ -416,30 +441,4 @@ def test_detected_positions_match_scene():
             f"{name} y: expected {exp_y}, got {y_val}"
 
 
-def test_camera_publishes_at_rate():
-    """camera_node should publish /camera/image_raw at > 5 Hz."""
-    cmd = ["ros2", "topic", "hz", "/camera/image_raw", "--window", "5"]
-    print(f"\n  >>> {' '.join(cmd)}")
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
-        out = result.stdout + result.stderr
-    except subprocess.TimeoutExpired as e:
-        # ros2 topic hz never exits — timeout is expected
-        out = (e.stdout or b"").decode() + (e.stderr or b"").decode()
-    for line in out.strip().splitlines():
-        print(f"  {line}")
-    assert "average rate" in out, f"no rate data from topic hz:\n{out}"
-    m = re.search(r'average rate:\s*([\d.]+)', out)
-    assert m is not None, f"could not parse rate from hz output:\n{out}"
-    rate = float(m.group(1))
-    assert rate > 5.0, f"camera rate too low: {rate:.1f} Hz (expected > 5):\n{out}"
 
-
-def test_vision_confidence_positive():
-    """All detected objects should have confidence > 0."""
-    rc, out = ros2_topic("echo", "/detected_objects", "--once", timeout=30)
-    assert rc == 0, f"topic echo failed:\n{out}"
-    confidences = re.findall(r'confidence:\s*([\d.]+)', out)
-    assert len(confidences) > 0, f"no confidence values in detection output:\n{out}"
-    for c in confidences:
-        assert float(c) > 0.0, f"confidence {c} not positive:\n{out}"

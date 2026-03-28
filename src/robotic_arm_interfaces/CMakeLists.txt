@@ -10,6 +10,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/DetectedObject.msg"
   "msg/DetectedObjects.msg"
   "srv/ListObjects.srv"
+  "srv/MoveObject.srv"
   "action/Pick.action"
   "action/Place.action"
   "action/MoveTo.action"
