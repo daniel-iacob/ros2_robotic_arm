@@ -3,6 +3,8 @@ build/
 install/
 log/
 
+*.log
+
 # --- Python ---
 __pycache__/
 *.pyc

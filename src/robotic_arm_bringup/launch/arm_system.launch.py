@@ -32,4 +32,26 @@ def generate_launch_description():
         output="screen",
     )
 
-    return LaunchDescription([moveit_demo, scene_manager_node, motion_server_node])
+    # Synthetic camera (renders MoveIt scene as top-down image)
+    camera_node = Node(
+        package="robotic_arm_perception",
+        executable="camera_node",
+        name="camera_node",
+        output="screen",
+    )
+
+    # Vision detection (HSV color detection from camera image)
+    vision_node = Node(
+        package="robotic_arm_perception",
+        executable="vision_node",
+        name="vision_node",
+        output="screen",
+    )
+
+    return LaunchDescription([
+        moveit_demo,
+        scene_manager_node,
+        motion_server_node,
+        camera_node,
+        vision_node,
+    ])

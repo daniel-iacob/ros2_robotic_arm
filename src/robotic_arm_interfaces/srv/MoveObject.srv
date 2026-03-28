@@ -1,0 +1,8 @@
+# Move an object to a new position in the planning scene
+string name
+float64 x
+float64 y
+float64 z
+---
+bool success
+string message

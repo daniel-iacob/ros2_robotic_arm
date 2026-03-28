@@ -6,7 +6,7 @@ import time
 import pytest
 
 STARTUP_TIMEOUT = 90
-SIM_LOG = "/tmp/sim_test.log"
+SIM_LOG = "log/test/sim.log"
 
 
 def _kill_sim_processes():
@@ -17,6 +17,8 @@ def _kill_sim_processes():
     subprocess.run(["pkill", "-f", "ros2_control_node"], capture_output=True)
     subprocess.run(["pkill", "-f", "robot_state_publisher"], capture_output=True)
     subprocess.run(["pkill", "-f", "rviz2"], capture_output=True)
+    subprocess.run(["pkill", "-f", "camera_node"], capture_output=True)
+    subprocess.run(["pkill", "-f", "vision_node"], capture_output=True)
     subprocess.run(["pkill", "-f", "arm_system.launch.py"], capture_output=True)
 
 

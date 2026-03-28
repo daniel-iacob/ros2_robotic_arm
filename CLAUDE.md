@@ -24,21 +24,23 @@ Learn ROS2 concepts with a simulated robotic arm + gripper + camera → eventual
 
 ## Quick Reference
 
-**What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Phase 3 — persistent action server + CLI client with MoveIt2 mock hardware. No Gazebo, no camera, no LLM yet.
+**What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Phase 4 complete — camera + vision pipeline with position updates, 44 integration tests (44/44 passing). No Gazebo, no LLM.
 
 **Quick start**: `./run.sh sim` → launches RViz + MoveIt | `./run.sh tests` → runs integration tests
 
 **Running nodes** (after `./run.sh sim`):
-- `motion_server` — persistent action server, holds `ArmController` in memory
+- `motion_server` — persistent action server, holds `ArmController` in memory, subscribes to `/detected_objects`
 - `scene_manager` — one-shot, spawns objects from `objects.yaml` into MoveIt
 - `move_group` — MoveIt2 planning server
 - `arm_controller` / `gripper_controller` / `joint_state_broadcaster` — ros2_control
 - `robot_state_publisher` + `rviz2`
+- `camera_node` — synthetic top-down camera (Phase 4, working)
+- `vision_node` — HSV color detection from pixels (Phase 4, working)
 
 **Entry points**:
 - CLI: `ros2 run robotic_arm_bringup arm <command> [args]` (thin action client)
 - Actions: `/pick`, `/place`, `/move_to`, `/home`, `/reset`, `/open_gripper`, `/close_gripper`
-- Service: `/list_objects`
+- Services: `/list_objects`, `/move_object`
 - Python: `from robotic_arm_bringup.arm_controller import ArmController`
 
 **Key files**:
@@ -47,9 +49,12 @@ Learn ROS2 concepts with a simulated robotic arm + gripper + camera → eventual
 - Action server: `src/robotic_arm_bringup/robotic_arm_bringup/motion_server.py`
 - CLI client: `src/robotic_arm_bringup/robotic_arm_bringup/arm_cli.py`
 - Action/service definitions: `src/robotic_arm_interfaces/`
+- Vision messages: `src/robotic_arm_interfaces/msg/DetectedObject.msg`, `DetectedObjects.msg`
 - Object definitions: `src/robotic_arm_bringup/config/objects.yaml`
 - Scene setup: `src/robotic_arm_bringup/robotic_arm_bringup/scene_manager.py`
 - MoveIt config: `src/robotic_arm_moveit_config/`
+- Synthetic camera: `src/robotic_arm_perception/robotic_arm_perception/camera_node.py`
+- Vision detection: `src/robotic_arm_perception/robotic_arm_perception/vision_node.py`
 - Launch: `src/robotic_arm_bringup/launch/arm_system.launch.py`
 
 ---
@@ -70,6 +75,17 @@ These have caused bugs. Always remember them.
 | Use `/apply_planning_scene` service (not topic) for attach/detach | `time.sleep()` doesn't spin executor → race condition |
 | Mimic joints: no command interface in ros2_control | ros2_control crash on startup |
 | Never call `spin_until_future_complete` on a node with an active executor | Deadlock — use `_wait_for_future()` instead |
+| Never call `rclpy.spin_once(self)` on a node spun by `rclpy.spin()` | Executor deadlock — use `time.sleep()` polling instead |
+| Never block inside a timer/service callback with `time.sleep()` polling | Blocks executor thread → service response callback can't fire → future never completes |
+| MoveIt `CollisionObject.primitive_poses` are in object-local frame | World position is in `co.pose`, not `co.primitive_poses[0]` — reading primitive_poses gives (0,0,0) |
+| Use `future.add_done_callback()` for async service calls inside callbacks | Non-blocking; executor calls the callback when response arrives — no sleeping needed |
+| `place()` must check `_is_object_attached()` before proceeding | Without it, place succeeds on unheld objects — detach/re-add corrupts scene |
+| In `place()`, lift BEFORE re-adding object to scene | If lift fails with object in scene → arm stuck in collision → all subsequent motions fail |
+| In `place()`, store object at `z` not `release_z` | Each place drops Z by 0.05 → objects drift below reachable workspace after 2+ placements |
+| After motion, wait for fresh `/joint_states` before next plan | Stale joint state → MoveIt plans from wrong start → START_STATE_IN_COLLISION |
+| Vision callback must use trylock (non-blocking) on `self._lock` | Blocking lock consumes executor threads → MoveGroup result never delivered → 30s timeout on all motions |
+| Vision callback must skip held objects (`self._held_objects`) | Camera sees attached objects at arm position → vision moves them to (0,0) → scene corruption |
+| Vision callback needs per-object cooldown (2s) after actions | Stale camera frame after pick/place → vision overwrites correct position with pre-action position |
 
 ---
 
@@ -78,16 +94,18 @@ These have caused bugs. Always remember them.
 - ✓ Arm + gripper URDF with MoveIt2 + KDL IK
 - ✓ RViz visualization with colored collision objects
 - ✓ Importable `ArmController` library
-- ✓ Persistent `motion_server` action server (7 actions + 1 service)
+- ✓ Persistent `motion_server` action server (7 actions + 2 services)
 - ✓ Thin CLI client (sends goals to `motion_server`)
 - ✓ Pick-and-place with planning scene updates
 - ✓ `place` CLI accepts optional target position args
 - ✓ YAML-based object config (`objects.yaml`)
 - ✓ Cylinder + box shape support in scene
 - ✓ Basket (tray) as place target
-- ✓ 24 integration tests (error handling, state verification, round-trip) — all passing
+- ✓ 44 integration tests (error handling, state verification, round-trip, vision) — 44/44 passing
 - ✓ place() visual fixed: object stays attached during lowering
-- ✗ Camera / vision (Phase 4)
+- ✓ Kuka-style URDF: orange gradient (c1–c4) + horizontal cylindrical knuckles at joints
+- ✓ RViz shows URDF colors (Scene Robot → Show Robot Visual: true)
+- ✓ Camera + vision pipeline (Phase 4) — complete: vision updates scene positions, `move-object` CLI
 - ✗ LLM integration (Phase 5)
 
 ## Roadmap
@@ -95,8 +113,8 @@ These have caused bugs. Always remember them.
 - [x] **Phase 1** — CLI motion control, MoveIt2 integration, pick-and-place
 - [x] **Phase 2** — Importable `ArmController` library + YAML config + thin CLI
 - [x] **Phase 3** — Persistent `motion_server` action server + CLI as action client
-- [ ] **Phase 4** — Camera + vision-based object detection
-- [ ] **Phase 5** — LLM interface for natural language control
+- [x] **Phase 4** — Camera + vision pipeline complete: position updates with dead-zone + cooldown + held-object filtering, `move-object` CLI. 42 tests, 44/44 passing. Design: [`doc/camera_vision.md`](doc/camera_vision.md)
+- [ ] **Phase 5** — LLM interface: `llm_interface_node` + `validator_node` → natural language → motion server actions
 
 ## Known Limitations
 - 3-DOF: cannot achieve arbitrary orientations
@@ -107,7 +125,13 @@ These have caused bugs. Always remember them.
 
 ---
 
-## Latest Session Changes (2026-03-16)
+## Latest Session Changes (2026-03-28)
 
-- **joint_1 constraint widened**: tolerance ±0.5 → ±1.5 rad in `_move_to_position()` — was blocking picks after large workspace swings (e.g. basket → -Y hemisphere). Root cause: overly tight joint bias constraint prevented MoveIt from planning across the full rotation range.
-- **place() reorder confirmed working**: object stays attached during lowering; 24/24 tests green.
+- **Vision position updates enabled**: `_detected_objects_callback` in motion_server now updates planning scene from vision detections. Three safety mechanisms prevent scene corruption:
+  - **Trylock**: Non-blocking lock acquire — if arm is busy, skip detection (prevents executor thread starvation)
+  - **Held-object filter**: Skip objects attached to arm (camera sees them at arm position, not their real position)
+  - **Per-object cooldown (2s)**: After pick/place/reset, ignore vision for that object (stale camera frame shows pre-action position)
+  - **Dead-zone (2cm)**: Ignore detections within 2cm of known position (pixel quantization noise)
+- **`move-object` CLI command**: `arm move-object <name> <x> <y> <z>` — moves an object in the planning scene via `/move_object` service
+- **Tests consolidated**: 44 → 42 → 44 (added move-object tests). Merged confidence check into `test_all_objects_detected` (eliminated redundant DDS round-trip that timed out under load). Removed camera rate test (system-load dependent, not a camera bug).
+- **Test logs**: `./run.sh tests` saves output to `log/test/output.log`, sim log to `log/test/sim.log`

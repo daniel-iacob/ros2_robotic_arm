@@ -32,7 +32,7 @@ from robotic_arm_interfaces.action import (
     Place,
     Reset,
 )
-from robotic_arm_interfaces.srv import ListObjects
+from robotic_arm_interfaces.srv import ListObjects, MoveObject
 
 
 def _send_action_goal(node, action_type, action_name, goal_msg, timeout=60.0):
@@ -101,6 +101,31 @@ def _call_list_objects(node):
     return True
 
 
+def _call_move_object(node, name, x, y, z):
+    """Call the move_object service."""
+    logger = node.get_logger()
+    client = node.create_client(MoveObject, "/move_object")
+
+    if not client.wait_for_service(timeout_sec=10.0):
+        logger.error("MoveObject service not available. Is motion_server running?")
+        return False, "Service not available"
+
+    req = MoveObject.Request()
+    req.name = name
+    req.x = x
+    req.y = y
+    req.z = z
+
+    future = client.call_async(req)
+    rclpy.spin_until_future_complete(node, future, timeout_sec=10.0)
+
+    if not future.done() or future.result() is None:
+        return False, "Service call failed"
+
+    result = future.result()
+    return result.success, result.message
+
+
 def main(args=None):
     parser = argparse.ArgumentParser(description="Robotic arm control CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -137,6 +162,13 @@ def main(args=None):
     p.add_argument("y", type=float, help="Y position")
     p.add_argument("z", type=float, help="Z position")
 
+    # move-object <name> <x> <y> <z>
+    p = sub.add_parser("move-object", help="Move an object in the planning scene")
+    p.add_argument("object", type=str, help="Object name")
+    p.add_argument("x", type=float, help="X position")
+    p.add_argument("y", type=float, help="Y position")
+    p.add_argument("z", type=float, help="Z position")
+
     parsed = parser.parse_args()
 
     rclpy.init(args=args)
@@ -147,6 +179,16 @@ def main(args=None):
         if parsed.command == "list-objects":
             success = _call_list_objects(node)
             exit_code = 0 if success else 1
+        elif parsed.command == "move-object":
+            success, msg = _call_move_object(
+                node, parsed.object, parsed.x, parsed.y, parsed.z
+            )
+            if success:
+                logger.info(f"Done: {msg}")
+                exit_code = 0
+            else:
+                logger.error(f"Failed: {msg}")
+                exit_code = 1
         else:
             if parsed.command == "pick":
                 goal = Pick.Goal(object_name=parsed.object)

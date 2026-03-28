@@ -7,9 +7,9 @@ Architecture diagrams and design decisions live in `doc/architecture.md`.
 
 ---
 
-## Project Structure (Phase 3)
+## Project Structure (Phase 4)
 
-- **Motion server**: `motion_server.py` — persistent node, holds `ArmController` in memory, 7 actions + 1 service
+- **Motion server**: `motion_server.py` — persistent node, holds `ArmController` in memory, 7 actions + 2 services
 - **Motion library**: `arm_controller.py` → `ArmController` class (importable)
 - **CLI**: `arm_cli.py` → thin action client, sends goals to `motion_server`
 - **Shell wrapper**: `robotic_arm.sh` — forwards to `ros2 run robotic_arm_bringup arm ...`
@@ -126,3 +126,65 @@ No `command_interface` — only `state_interface`. Mimic info from URDF `<mimic>
 ## open_loop_control
 
 `arm_controller` requires `open_loop_control: true` in ros2_controllers.yaml for mock hardware.
+
+---
+
+## Phase 4 — Camera + Vision Design Decisions
+
+- **No Gazebo** — synthetic `camera_node` renders MoveIt scene as top-down image
+- **New package**: `robotic_arm_perception` (swappable for Gazebo later)
+- **Swap boundary**: `/camera/image_raw` — `vision_node` and everything downstream is permanent code
+- **`vision_node` must NOT access MoveIt** — only processes pixels from `/camera/image_raw`
+- **Color config from `objects.yaml`** — single source of truth for both `camera_node` and `vision_node`
+- **Z = fixed from YAML** — top-down orthographic camera can't determine height
+- **Design doc**: `doc/camera_vision.md`
+- **Status (2026-03-28)**: Phase 4 complete. Vision callback enabled with trylock + held-object filter + 2s cooldown + 2cm dead-zone. `move-object` CLI added. 42 tests, 42/42 passing.
+
+## place() — Held-State Validation
+
+`place()` must check `_is_object_attached(object_name)` before proceeding. Without this, placing
+an unheld object succeeds silently — the detach/re-add sequence corrupts the planning scene.
+
+---
+
+## place() — Lift Before Re-add (Critical)
+
+In `place()`, lift the arm to full clearance BEFORE re-adding the object to the scene.
+Object not in scene = no collision possible during lift.
+Old approach (lift 4cm → re-add → lift more) failed intermittently because MoveIt's position
+tolerance meant 4cm wasn't always enough clearance.
+
+---
+
+## place() — Z-Drift Prevention
+
+`update_object_position()` must use the intended `z`, NOT `release_z` (z - 0.05).
+Using `release_z` causes 5cm drift per placement — objects sink below reachable workspace.
+
+---
+
+## Fresh Joint State After Motion
+
+`_wait_for_fresh_joint_state()` in `arm_controller.py` polls `/joint_states` after each
+successful motion until a newer reading arrives. Without this, the next plan may start from
+a stale joint state → `START_STATE_IN_COLLISION`.
+
+---
+
+## Vision Callback Safety (Critical)
+
+`_detected_objects_callback` in `motion_server.py` must follow these rules:
+
+1. **Trylock (non-blocking)**: Use `self._lock.acquire(blocking=False)`. Blocking acquire at 10Hz
+   consumes all executor threads while an action holds the lock → MoveGroup result callbacks can't
+   fire → every motion times out at 30s.
+
+2. **Skip held objects**: Track attached objects in `self._held_objects` set. Camera sees attached
+   objects at the arm's position, not their actual position → vision would move them to ~(0,0).
+
+3. **Per-object cooldown (2s)**: After pick/place/reset, set `self._vision_cooldown[name]`.
+   Camera lags by ~100ms — stale frames show pre-action positions. Without cooldown, vision
+   overwrites the correct post-action position with the stale pre-action one.
+
+4. **Dead-zone (2cm)**: Ignore detections within 2cm of known position. Pixel quantization
+   introduces ~1-3cm noise. Without dead-zone, positions oscillate continuously.

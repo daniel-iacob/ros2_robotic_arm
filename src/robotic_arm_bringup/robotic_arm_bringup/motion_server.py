@@ -7,6 +7,7 @@ file-based state persistence (/tmp/ position cache).
 """
 
 import threading
+import time
 
 import rclpy
 from rclpy.action import ActionServer
@@ -24,8 +25,8 @@ from robotic_arm_interfaces.action import (
     Place,
     Reset,
 )
-from robotic_arm_interfaces.msg import ObjectInfo
-from robotic_arm_interfaces.srv import ListObjects
+from robotic_arm_interfaces.msg import DetectedObjects, ObjectInfo
+from robotic_arm_interfaces.srv import ListObjects, MoveObject
 
 
 class MotionServer(Node):
@@ -37,6 +38,13 @@ class MotionServer(Node):
 
         # Serialize all arm operations — ArmController is not thread-safe
         self._lock = threading.Lock()
+
+        # Per-object cooldown: after an action modifies an object, suppress
+        # vision updates to let the camera re-render (avoids stale frames)
+        self._vision_cooldown = {}  # name -> monotonic timestamp
+
+        # Track held objects — vision sees them at arm position, not real position
+        self._held_objects = set()
 
         # Use ReentrantCallbackGroup so action callbacks can call
         # spin_until_future_complete inside ArmController
@@ -86,6 +94,21 @@ class MotionServer(Node):
             callback_group=cb_group,
         )
 
+        # Move object service
+        self._move_object_srv = self.create_service(
+            MoveObject, "/move_object",
+            self._move_object_callback,
+            callback_group=cb_group,
+        )
+
+        # Subscribe to vision detections
+        self._detection_sub = self.create_subscription(
+            DetectedObjects, "/detected_objects",
+            self._detected_objects_callback,
+            10,
+            callback_group=cb_group,
+        )
+
         # Initialize ArmController (connects to MoveIt)
         self._controller = ArmController(self)
         self.get_logger().info("Motion server ready")
@@ -118,6 +141,9 @@ class MotionServer(Node):
 
         with self._lock:
             success = self._controller.pick(name, on_progress=on_progress)
+        if success:
+            self._held_objects.add(name)
+        self._vision_cooldown[name] = time.monotonic()
 
         return self._finish(
             goal_handle, Pick.Result, success,
@@ -136,6 +162,8 @@ class MotionServer(Node):
 
         with self._lock:
             success = self._controller.place(name, x, y, z, on_progress=on_progress)
+        self._held_objects.discard(name)
+        self._vision_cooldown[name] = time.monotonic()
 
         return self._finish(
             goal_handle, Place.Result, success,
@@ -175,6 +203,10 @@ class MotionServer(Node):
 
         with self._lock:
             success = self._controller.reset(on_progress=on_progress)
+        self._held_objects.clear()
+        now = time.monotonic()
+        for obj_name in self._controller.objects:
+            self._vision_cooldown[obj_name] = now
 
         return self._finish(
             goal_handle, Reset.Result, success,
@@ -207,6 +239,44 @@ class MotionServer(Node):
             "Gripper closed" if success else "Failed to close gripper",
         )
 
+    # ── Detection callback ─────────────────────────────────────────────
+
+    def _detected_objects_callback(self, msg: DetectedObjects):
+        """Update object positions from vision detections.
+
+        Uses non-blocking trylock — if an action is running (lock held),
+        skip this cycle to avoid consuming executor threads.
+        """
+        if not self._lock.acquire(blocking=False):
+            return  # action in progress — skip
+        try:
+            now = time.monotonic()
+            for det in msg.objects:
+                if det.confidence < 0.5:
+                    continue
+                if det.name not in self._controller.objects:
+                    continue
+                # Skip held objects — camera sees them at arm position
+                if det.name in self._held_objects:
+                    continue
+                # Cooldown: skip objects recently modified by an action
+                cooldown = self._vision_cooldown.get(det.name, 0.0)
+                if now - cooldown < 2.0:
+                    continue
+                cur = self._controller.objects[det.name]
+                if abs(det.x - cur[0]) < 0.02 and abs(det.y - cur[1]) < 0.02:
+                    continue
+                self.get_logger().info(
+                    f"Vision update: {det.name} moved from "
+                    f"({cur[0]:.3f}, {cur[1]:.3f}) to ({det.x:.3f}, {det.y:.3f})"
+                )
+                self._controller.update_object_position(
+                    det.name, det.x, det.y, det.z
+                )
+                self._vision_cooldown[det.name] = now
+        finally:
+            self._lock.release()
+
     # ── Service callback ──────────────────────────────────────────────
 
     def _list_objects_callback(self, request, response):
@@ -222,6 +292,29 @@ class MotionServer(Node):
                 obj.held = self._controller._is_object_attached(name)
                 response.objects.append(obj)
 
+        return response
+
+    def _move_object_callback(self, request, response):
+        name = request.name
+        self.get_logger().info(
+            f"MoveObject request: {name} to ({request.x:.3f}, {request.y:.3f}, {request.z:.3f})"
+        )
+
+        with self._lock:
+            if name not in self._controller.objects:
+                response.success = False
+                response.message = f"Unknown object: {name}"
+                return response
+            success = self._controller.update_object_position(
+                name, request.x, request.y, request.z
+            )
+        self._vision_cooldown[name] = time.monotonic()
+
+        response.success = success
+        response.message = (
+            f"Moved {name} to ({request.x:.3f}, {request.y:.3f}, {request.z:.3f})"
+            if success else f"Failed to move {name}"
+        )
         return response
 
 

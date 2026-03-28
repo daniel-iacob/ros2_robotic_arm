@@ -52,7 +52,9 @@ case "$1" in
         echo -e "${BLUE}Running integration tests...${NC}"
         find tests/ -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
         source install/setup.bash
-        pytest -v -s
+        mkdir -p log/test
+        pytest -v -s 2>&1 | tee log/test/output.log
+        exit ${PIPESTATUS[0]}
         ;;
     *)
         echo -e "${YELLOW}Invalid option: $1${NC}"
