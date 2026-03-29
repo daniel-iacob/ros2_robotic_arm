@@ -1,26 +1,29 @@
 objects:
-  # --- cylinders (on-axis positions, within 0.45m reach) ---
+  # --- cylinders (diagonal -Y positions, within AR4 reachable workspace) ---
+  # radius=0.010m (20mm diameter) fits within AR4 gripper jaw opening (24mm)
+  # All at j1 ~ -45...-90 deg: confirmed reachable at z=0.10 in testing
   blue_cylinder:
     shape: cylinder
-    dimensions: [0.05, 0.025]   # [height, radius]
-    position: [0.45, 0.0, 0.05]
+    dimensions: [0.05, 0.010]   # [height, radius]
+    position: [0.30, -0.30, 0.10]
     color: [0.0, 0.0, 1.0, 1.0]
 
   red_cylinder:
     shape: cylinder
-    dimensions: [0.05, 0.025]
-    position: [0.0, -0.45, 0.05]
+    dimensions: [0.05, 0.010]
+    position: [0.0, -0.30, 0.10]
     color: [1.0, 0.0, 0.0, 1.0]
 
   green_cylinder:
     shape: cylinder
-    dimensions: [0.05, 0.025]
-    position: [0.30, -0.30, 0.05]
+    dimensions: [0.05, 0.010]
+    position: [0.20, -0.30, 0.10]
     color: [0.0, 0.8, 0.0, 1.0]
 
-  # --- tray (positive Y side) ---
+  # --- tray (-Y side, within AR4 reachable workspace) ---
+  # basket y=[-0.25,-0.05] — all cylinders at y=-0.30 are outside basket
   basket:
     shape: box
     dimensions: [0.20, 0.20, 0.02]
-    position: [0.4, 0.25, 0.02]
+    position: [0.35, -0.15, 0.10]
     color: [0.6, 0.3, 0.0, 1.0]
