@@ -114,6 +114,8 @@ These have caused bugs. Always remember them.
 - [x] **Phase 2** — Importable `ArmController` library + YAML config + thin CLI
 - [x] **Phase 3** — Persistent `motion_server` action server + CLI as action client
 - [x] **Phase 4** — Camera + vision pipeline complete: position updates with dead-zone + cooldown + held-object filtering, `move-object` CLI. 42 tests, 44/44 passing. Design: [`doc/camera_vision.md`](doc/camera_vision.md)
+- [ ] **Phase 4.5** — Switch to AR3 6-DOF arm. Plan: [`doc/switch_to_6_dof.md`](doc/switch_to_6_dof.md)
+- [ ] **Phase 4.6** — Gazebo physics simulation (after AR3 switch)
 - [ ] **Phase 5** — LLM interface: `llm_interface_node` + `validator_node` → natural language → motion server actions
 
 ## Known Limitations
@@ -125,13 +127,10 @@ These have caused bugs. Always remember them.
 
 ---
 
-## Latest Session Changes (2026-03-28)
+## Latest Session Changes (2026-03-29)
 
-- **Vision position updates enabled**: `_detected_objects_callback` in motion_server now updates planning scene from vision detections. Three safety mechanisms prevent scene corruption:
-  - **Trylock**: Non-blocking lock acquire — if arm is busy, skip detection (prevents executor thread starvation)
-  - **Held-object filter**: Skip objects attached to arm (camera sees them at arm position, not their real position)
-  - **Per-object cooldown (2s)**: After pick/place/reset, ignore vision for that object (stale camera frame shows pre-action position)
-  - **Dead-zone (2cm)**: Ignore detections within 2cm of known position (pixel quantization noise)
-- **`move-object` CLI command**: `arm move-object <name> <x> <y> <z>` — moves an object in the planning scene via `/move_object` service
-- **Tests consolidated**: 44 → 42 → 44 (added move-object tests). Merged confidence check into `test_all_objects_detected` (eliminated redundant DDS round-trip that timed out under load). Removed camera rate test (system-load dependent, not a camera bug).
-- **Test logs**: `./run.sh tests` saves output to `log/test/output.log`, sim log to `log/test/sim.log`
+- **arm_config.yaml created**: All arm-specific values (joint names, group names, home position, gripper values, motion offsets, touch links, frame names) extracted from Python source into `src/robotic_arm_bringup/config/arm_config.yaml`. Switching to AR3 now requires updating one file.
+- **arm_controller.py decoupled**: All hardcoded joint names, group names, `"base_link"` frame_id strings replaced with config-loaded instance variables.
+- **scene_manager.py decoupled**: `"base_link"` replaced with `self._base_frame` from config.
+- **move_to_cube.py deleted**: Legacy script (predated ArmController), not used anywhere.
+- **AR3 migration plan**: `doc/switch_to_6_dof.md` — 8-step plan for switching to AR3 6-DOF.

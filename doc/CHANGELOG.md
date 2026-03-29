@@ -5,6 +5,46 @@ Patterns and constraints: [MEMORY.md](MEMORY.md). Architecture: [architecture.md
 
 ---
 
+## 2026-03-29 — 6-DOF prep: arm_config.yaml + hardcoded value removal
+
+Prepared codebase for AR3 6-DOF migration. All arm-specific values extracted from Python source
+into a single config file. No logic changes — pure decoupling.
+
+### arm_config.yaml created (`src/robotic_arm_bringup/config/arm_config.yaml`)
+
+New config file centralizes all arm-specific values:
+- Planning group names (`arm_group`, `gripper_group`)
+- Joint names (all arm joints + gripper joint)
+- Home position (joint name → angle)
+- End-effector link, base frame, base rotation joint
+- Gripper open/close positions
+- Gripper touch links (for MoveIt attach)
+- Motion offsets: approach height, descend height, lift heights for pick/place
+
+### arm_controller.py — reads all values from config
+
+`load_arm_config()` function added. `ArmController.__init__` loads all arm-specific values into
+instance variables (`self._arm_group`, `self._eef_link`, `self._base_frame`, `self._arm_joints`,
+`self._home_position`, `self._gripper_joint`, `self._gripper_open`, `self._gripper_close`,
+`self._gripper_touch_links`, `self._approach_z`, `self._descend_z`, `self._lift_z`,
+`self._place_lower_z`, `self._place_lift_z`). All 3 hardcoded `"base_link"` frame_id strings
+replaced with `self._base_frame`.
+
+### scene_manager.py — reads base_frame from config
+
+Replaced hardcoded `"base_link"` with `self._base_frame` loaded from `arm_config.yaml`.
+
+### move_to_cube.py deleted
+
+Legacy script predating `ArmController`. Not registered in setup.py, not imported anywhere,
+not called by any launch file or test. Contained ~8 copies of the old hardcoded values.
+
+### Migration plan saved
+
+`doc/switch_to_6_dof.md` — full step-by-step plan for the AR3 switch.
+
+---
+
 ## 2026-03-28 — Phase 4 complete: vision position updates + move-object CLI
 
 ### Vision callback enabled (`_detected_objects_callback`)
