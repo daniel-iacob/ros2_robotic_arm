@@ -2,8 +2,8 @@
 # arm_controller.py reads all geometry/joint/group names from here.
 
 arm:
-  planning_group: "arm_group"
-  end_effector_link: "grasp_link"
+  planning_group: "ar_manipulator"
+  end_effector_link: "ee_link"
   base_frame: "base_link"
   base_rotation_joint: "joint_1"  # Used to bias IK toward natural base angle
 
@@ -12,25 +12,32 @@ arm:
     - "joint_1"
     - "joint_2"
     - "joint_3"
+    - "joint_4"
+    - "joint_5"
+    - "joint_6"
 
   # Home position: joint name → angle in radians
   home:
     joint_1: 0.0
     joint_2: 0.0
     joint_3: 0.0
+    joint_4: 0.0
+    joint_5: 0.0
+    joint_6: 0.0
 
 gripper:
-  planning_group: "gripper_group"
-  joint_name: "left_finger_joint"
-  open_position: 0.0    # radians — fully open
-  close_position: -0.04 # radians — fully closed
+  planning_group: "ar_gripper"
+  joint_name: "gripper_jaw1_joint"
+  open_position: 0.012   # meters (12mm — jaws open); prismatic joint
+  close_position: 0.0    # meters (0mm — jaws closed); prismatic joint
 
   # Links that may contact a grasped object (allowed collisions during attach)
   touch_links:
-    - "left_finger"
-    - "right_finger"
-    - "grasp_link"
-    - "gripper_base"
+    - "gripper_base_link"
+    - "gripper_jaw1_link"
+    - "gripper_jaw2_link"
+    - "ee_link"
+    - "link_6"
 
 motion:
   approach_z_offset: 0.10    # height above object before descending (meters)

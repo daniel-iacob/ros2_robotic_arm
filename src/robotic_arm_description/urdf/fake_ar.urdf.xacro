@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<!-- Simulation entry point for the AR4 arm using mock_components/GenericSystem.
+     Mirrors ar_gazebo.urdf.xacro but replaces the Gazebo plugin with the
+     ros2_control mock hardware so the arm can be tested without a real robot
+     or Gazebo physics. -->
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="ar4_fake">
+  <xacro:arg name="ar_model"   default="mk5" />
+  <xacro:arg name="tf_prefix"  default="" />
+  <xacro:arg name="include_gripper" default="true" />
+
+  <!-- Robot geometry macros -->
+  <xacro:include filename="$(find robotic_arm_description)/urdf/ar_macro.xacro" />
+  <xacro:include filename="$(find robotic_arm_description)/urdf/ar_gripper_macro.xacro" />
+
+  <!-- ros2_control macros -->
+  <xacro:include filename="$(find robotic_arm_description)/urdf/ar.ros2_control.xacro" />
+  <xacro:include filename="$(find robotic_arm_description)/urdf/ar_gripper.ros2_control.xacro" />
+
+  <!-- World root -->
+  <link name="world" />
+
+  <!-- Arm links + joints -->
+  <xacro:ar_robot
+    tf_prefix="$(arg tf_prefix)"
+    parent="world"
+    robot_parameters_file="$(find robotic_arm_description)/config/$(arg ar_model).yaml"
+  >
+    <origin xyz="0 0 0" rpy="0 0 0" />
+  </xacro:ar_robot>
+
+  <!-- Gripper links + joints -->
+  <xacro:if value="$(arg include_gripper)">
+    <xacro:ar_gripper
+      tf_prefix="$(arg tf_prefix)"
+      parent="$(arg tf_prefix)ee_link"
+    />
+  </xacro:if>
+
+  <!-- Arm ros2_control block — mock hardware, no real serial port -->
+  <xacro:ar_ros2_control
+    ar_model="$(arg ar_model)"
+    plugin_name="mock_components/GenericSystem"
+    serial_port="None"
+    calibrate="False"
+    robot_parameters_file="$(find robotic_arm_description)/config/$(arg ar_model).yaml"
+    joint_offset_parameters_file="$(find robotic_arm_description)/config/joint_offsets/$(arg ar_model).yaml"
+    driver_parameters_file="$(find robotic_arm_description)/config/driver.yaml"
+    tf_prefix="$(arg tf_prefix)"
+  />
+
+  <!-- Gripper ros2_control block — mock hardware -->
+  <xacro:if value="$(arg include_gripper)">
+    <xacro:ar_gripper_ros2_control
+      name="ARGripperFakeSystem"
+      plugin_name="mock_components/GenericSystem"
+      serial_port="None"
+      driver_parameters_file="$(find robotic_arm_description)/config/gripper_driver.yaml"
+      tf_prefix="$(arg tf_prefix)"
+    />
+  </xacro:if>
+
+</robot>
