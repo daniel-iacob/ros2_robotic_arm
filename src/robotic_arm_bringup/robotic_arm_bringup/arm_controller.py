@@ -69,6 +69,14 @@ def load_objects_config():
         return yaml.safe_load(f)["objects"]
 
 
+def load_arm_config():
+    """Load arm-specific configuration from arm_config.yaml."""
+    share_dir = get_package_share_directory("robotic_arm_bringup")
+    config_path = f"{share_dir}/config/arm_config.yaml"
+    with open(config_path) as f:
+        return yaml.safe_load(f)
+
+
 class ArmController:
     """Programmatic interface for the robotic arm."""
 
@@ -102,6 +110,20 @@ class ArmController:
 
         # Load object definitions from YAML
         self._object_config = load_objects_config()
+
+        # Load arm-specific config (joints, groups, gripper values)
+        _arm_cfg = load_arm_config()
+        self._arm_group = _arm_cfg["arm"]["planning_group"]
+        self._gripper_group = _arm_cfg["gripper"]["planning_group"]
+        self._eef_link = _arm_cfg["arm"]["end_effector_link"]
+        self._base_frame = _arm_cfg["arm"]["base_frame"]
+        self._arm_joints = _arm_cfg["arm"]["joints"]
+        self._home_position = _arm_cfg["arm"]["home"]  # dict: joint_name -> angle
+        self._base_rotation_joint = _arm_cfg["arm"]["base_rotation_joint"]
+        self._gripper_joint = _arm_cfg["gripper"]["joint_name"]
+        self._gripper_open = _arm_cfg["gripper"]["open_position"]
+        self._gripper_close = _arm_cfg["gripper"]["close_position"]
+        self._gripper_touch_links = _arm_cfg["gripper"]["touch_links"]
 
         # Current positions — initialized from YAML, updated by place/pick
         self.objects = {}
@@ -310,12 +332,12 @@ class ArmController:
     def open_gripper(self) -> bool:
         """Open gripper to fully open position."""
         self.logger.info("Opening gripper...")
-        return self._move_gripper(0.0)
+        return self._move_gripper(self._gripper_open)
 
     def close_gripper(self) -> bool:
         """Close gripper to fully closed position."""
         self.logger.info("Closing gripper...")
-        return self._move_gripper(-0.04)
+        return self._move_gripper(self._gripper_close)
 
     def reset(self, on_progress=None) -> bool:
         """Full recovery: detach all, clear scene, open gripper, go home, re-add all objects.
@@ -572,8 +594,9 @@ class ArmController:
         with self._joint_state_lock:
             if self._current_joint_state is None:
                 state = RobotState()
-                state.joint_state.name = ["joint_1", "joint_2", "joint_3", "left_finger_joint"]
-                state.joint_state.position = [0.0, 0.0, 0.0, 0.0]
+                all_joints = self._arm_joints + [self._gripper_joint]
+                state.joint_state.name = all_joints
+                state.joint_state.position = [0.0] * len(all_joints)
                 return state
 
             state = RobotState()
@@ -677,7 +700,7 @@ class ArmController:
 
     def _move_to_joints(self, joint_positions: list) -> bool:
         goal_msg = MoveGroup.Goal()
-        goal_msg.request.group_name = "arm_group"
+        goal_msg.request.group_name = self._arm_group
         goal_msg.request.num_planning_attempts = 10
         goal_msg.request.allowed_planning_time = self.planning_time
         goal_msg.request.max_velocity_scaling_factor = self.max_velocity_scaling
@@ -709,7 +732,7 @@ class ArmController:
         )
 
         goal_msg = MoveGroup.Goal()
-        goal_msg.request.group_name = "arm_group"
+        goal_msg.request.group_name = self._arm_group
         goal_msg.request.num_planning_attempts = 10
         goal_msg.request.allowed_planning_time = self.planning_time
         goal_msg.request.max_velocity_scaling_factor = self.max_velocity_scaling
@@ -718,8 +741,8 @@ class ArmController:
 
         # Position constraint
         pc = PositionConstraint()
-        pc.header.frame_id = "base_link"
-        pc.link_name = "grasp_link"
+        pc.header.frame_id = self._base_frame
+        pc.link_name = self._eef_link
         pc.weight = 1.0
 
         target_pose = Pose()
@@ -740,10 +763,10 @@ class ArmController:
         goal_constraints = Constraints()
         goal_constraints.position_constraints.append(pc)
 
-        # Joint constraint on joint_1 biased toward natural angle for this XY target
+        # Joint constraint on base rotation joint biased toward natural angle for this XY target
         expected_j1 = math.atan2(y, x)
         jc = JointConstraint()
-        jc.joint_name = "joint_1"
+        jc.joint_name = self._base_rotation_joint
         jc.position = expected_j1
         jc.tolerance_above = 1.5
         jc.tolerance_below = 1.5
@@ -768,7 +791,7 @@ class ArmController:
 
     def _move_gripper(self, position: float, allowed_object: str = None) -> bool:
         goal_msg = MoveGroup.Goal()
-        goal_msg.request.group_name = "gripper_group"
+        goal_msg.request.group_name = self._gripper_group
         goal_msg.request.num_planning_attempts = 5
         goal_msg.request.allowed_planning_time = 2.0
         goal_msg.request.max_velocity_scaling_factor = 0.4
@@ -776,7 +799,7 @@ class ArmController:
         goal_msg.request.start_state = self._get_current_robot_state()
 
         jc = JointConstraint()
-        jc.joint_name = "left_finger_joint"
+        jc.joint_name = self._gripper_joint
         jc.position = position
         jc.tolerance_above = 0.001
         jc.tolerance_below = 0.001
@@ -825,7 +848,8 @@ class ArmController:
 
     def _go_home(self) -> bool:
         self.logger.info("Moving to home position...")
-        return self._move_to_joints([("joint_1", 0.0), ("joint_2", 0.0), ("joint_3", 0.0)])
+        home_joints = [(name, self._home_position[name]) for name in self._arm_joints]
+        return self._move_to_joints(home_joints)
 
     def _make_allowed_collision_diff(self, object_id: str) -> PlanningScene:
         acm = AllowedCollisionMatrix()
@@ -864,9 +888,9 @@ class ArmController:
         obj.operation = CollisionObject.ADD
 
         attached = AttachedCollisionObject()
-        attached.link_name = "grasp_link"
+        attached.link_name = self._eef_link
         attached.object = obj
-        attached.touch_links = ["left_finger", "right_finger", "grasp_link", "gripper_base"]
+        attached.touch_links = self._gripper_touch_links
 
         scene_msg = PlanningScene()
         scene_msg.is_diff = True

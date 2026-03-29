@@ -1,0 +1,33 @@
+# Arm-specific configuration — update this file when switching robot models.
+# arm_controller.py reads all geometry/joint/group names from here.
+
+arm:
+  planning_group: "arm_group"
+  end_effector_link: "grasp_link"
+  base_frame: "base_link"
+  base_rotation_joint: "joint_1"  # Used to bias IK toward natural base angle
+
+  # All arm joints in order (used for default state initialization)
+  joints:
+    - "joint_1"
+    - "joint_2"
+    - "joint_3"
+
+  # Home position: joint name → angle in radians
+  home:
+    joint_1: 0.0
+    joint_2: 0.0
+    joint_3: 0.0
+
+gripper:
+  planning_group: "gripper_group"
+  joint_name: "left_finger_joint"
+  open_position: 0.0    # radians — fully open
+  close_position: -0.04 # radians — fully closed
+
+  # Links that may contact a grasped object (allowed collisions during attach)
+  touch_links:
+    - "left_finger"
+    - "right_finger"
+    - "grasp_link"
+    - "gripper_base"
