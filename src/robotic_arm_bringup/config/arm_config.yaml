@@ -31,3 +31,10 @@ gripper:
     - "right_finger"
     - "grasp_link"
     - "gripper_base"
+
+motion:
+  approach_z_offset: 0.10    # height above object before descending (meters)
+  descend_z_offset: 0.02     # height above object for final pre-grasp approach (meters)
+  lift_z_offset: 0.10        # how far to lift after grasping (meters)
+  place_lower_z_offset: 0.05 # how far below target Z to release object (meters)
+  place_lift_z_offset: 0.15  # how far to lift after placing (meters)

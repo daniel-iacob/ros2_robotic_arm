@@ -10,12 +10,14 @@ from rclpy.node import Node
 from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import ColorRGBA
 
-from robotic_arm_bringup.arm_controller import load_objects_config
+from robotic_arm_bringup.arm_controller import load_arm_config, load_objects_config
 
 
 class SceneManager(Node):
     def __init__(self):
         super().__init__("scene_manager")
+
+        self._base_frame = load_arm_config()["arm"]["base_frame"]
 
         self._apply_client = self.create_client(ApplyPlanningScene, "/apply_planning_scene")
         self._get_client = self.create_client(GetPlanningScene, "/get_planning_scene")
@@ -27,7 +29,7 @@ class SceneManager(Node):
 
     def _apply_object(self, name: str, cfg: dict) -> bool:
         obj = CollisionObject()
-        obj.header.frame_id = "base_link"
+        obj.header.frame_id = self._base_frame
         obj.id = name
 
         primitive = SolidPrimitive()

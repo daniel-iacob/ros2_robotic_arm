@@ -124,6 +124,11 @@ class ArmController:
         self._gripper_open = _arm_cfg["gripper"]["open_position"]
         self._gripper_close = _arm_cfg["gripper"]["close_position"]
         self._gripper_touch_links = _arm_cfg["gripper"]["touch_links"]
+        self._approach_z = _arm_cfg["motion"]["approach_z_offset"]
+        self._descend_z = _arm_cfg["motion"]["descend_z_offset"]
+        self._lift_z = _arm_cfg["motion"]["lift_z_offset"]
+        self._place_lower_z = _arm_cfg["motion"]["place_lower_z_offset"]
+        self._place_lift_z = _arm_cfg["motion"]["place_lift_z_offset"]
 
         # Current positions — initialized from YAML, updated by place/pick
         self.objects = {}
@@ -199,15 +204,15 @@ class ArmController:
         self.open_gripper()
         time.sleep(0.1)
 
-        # Move to approach position (10cm above)
+        # Move to approach position
         _report("approaching object", 0.17)
-        if not self._move_to_position(pos[0], pos[1], pos[2] + 0.1):
+        if not self._move_to_position(pos[0], pos[1], pos[2] + self._approach_z):
             self.logger.error("Failed to move to approach position")
             return False
 
-        # Descend to 2cm above (ACM allows passing through object)
+        # Descend to just above object (ACM allows passing through object)
         _report("descending to grasp", 0.33)
-        if not self._move_to_position(pos[0], pos[1], pos[2] + 0.02, allowed_object=object_id):
+        if not self._move_to_position(pos[0], pos[1], pos[2] + self._descend_z, allowed_object=object_id):
             self.logger.error("Failed to approach for grasp")
             return False
         time.sleep(0.1)
@@ -230,7 +235,7 @@ class ArmController:
 
         # Lift
         _report("lifting", 0.83)
-        self._move_to_position(pos[0], pos[1], pos[2] + 0.1)
+        self._move_to_position(pos[0], pos[1], pos[2] + self._lift_z)
         self.logger.info(f"Pick completed: {object_name}")
         return True
 
@@ -265,7 +270,7 @@ class ArmController:
         if z is None:
             z = self.objects[object_name][2]  # Use original Z of object (where it sits)
 
-        release_z = z - 0.05  # Lower slightly before opening
+        release_z = z - self._place_lower_z  # Lower slightly before opening
 
         self.logger.info(f"Placing {object_name} at ({x:.3f}, {y:.3f}, {release_z:.3f})")
 
@@ -289,7 +294,7 @@ class ArmController:
 
         # Step 4: Lift away BEFORE re-adding object (object not in scene — no collision possible)
         _report("lifting away", 0.60)
-        self._move_to_position(x, y, release_z + 0.15)
+        self._move_to_position(x, y, release_z + self._place_lift_z)
 
         # Step 5: Re-add object at intended position (arm is well clear — safe)
         _report("updating scene", 0.80)
@@ -428,7 +433,7 @@ class ArmController:
         self.logger.info(f"Updating {object_name} position to ({x:.3f}, {y:.3f}, {z:.3f})")
 
         obj = CollisionObject()
-        obj.header.frame_id = "base_link"
+        obj.header.frame_id = self._base_frame
         obj.id = object_name
 
         primitive = SolidPrimitive()
@@ -881,7 +886,7 @@ class ArmController:
         pose.orientation.w = 1.0
 
         obj = CollisionObject()
-        obj.header.frame_id = "base_link"
+        obj.header.frame_id = self._base_frame
         obj.id = object_name
         obj.primitives.append(primitive)
         obj.primitive_poses.append(pose)
@@ -934,7 +939,7 @@ class ArmController:
 
     def _remove_object_from_scene(self, object_name: str):
         obj = CollisionObject()
-        obj.header.frame_id = "base_link"
+        obj.header.frame_id = self._base_frame
         obj.id = object_name
         obj.operation = CollisionObject.REMOVE
 
