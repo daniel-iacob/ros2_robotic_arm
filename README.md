@@ -41,7 +41,8 @@ There are two ways to start the container:
 After the container is started
 ```bash
 ./run build
-./run sim
+./run sim - just starts the rviz simulation
+./run tests - run tests to ensure everything works as expected
 ```
 
 ## Important
@@ -56,8 +57,15 @@ This command gives permission to the applications from the container to show the
 ## Status
 - Install everything from scripts (configuration as code)
 - Run inside docker container
-- Robot description + gripper
-- moveit config
+- AR4 6-DOF robot description + gripper (Kuka-style URDF with colored joints)
+- MoveIt2 config + KDL IK
+- RViz visualization with colored collision objects
+- Pick-and-place with planning scene updates
+- Persistent motion server (7 actions + 2 services)
+- Thin CLI client (`ros2 run robotic_arm_bringup arm <command>`)
+- YAML-based object config
+- Synthetic top-down camera + HSV vision pipeline
+- Integration tests
 
 ## Useful ROS2 commands
 - ros2 node list
