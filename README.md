@@ -40,9 +40,9 @@ There are two ways to start the container:
 
 After the container is started
 ```bash
-./run build
-./run sim - just starts the rviz simulation
-./run tests - run tests to ensure everything works as expected
+./run.sh build
+./run.sh sim - just starts the rviz simulation
+./run.sh tests - run tests to ensure everything works as expected
 ```
 
 ## Important
