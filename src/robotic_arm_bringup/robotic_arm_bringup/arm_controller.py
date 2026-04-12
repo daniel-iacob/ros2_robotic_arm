@@ -69,6 +69,14 @@ def load_objects_config():
         return yaml.safe_load(f)["objects"]
 
 
+def load_arm_config():
+    """Load arm-specific configuration from arm_config.yaml."""
+    share_dir = get_package_share_directory("robotic_arm_bringup")
+    config_path = f"{share_dir}/config/arm_config.yaml"
+    with open(config_path) as f:
+        return yaml.safe_load(f)
+
+
 class ArmController:
     """Programmatic interface for the robotic arm."""
 
@@ -102,6 +110,25 @@ class ArmController:
 
         # Load object definitions from YAML
         self._object_config = load_objects_config()
+
+        # Load arm-specific config (joints, groups, gripper values)
+        _arm_cfg = load_arm_config()
+        self._arm_group = _arm_cfg["arm"]["planning_group"]
+        self._gripper_group = _arm_cfg["gripper"]["planning_group"]
+        self._eef_link = _arm_cfg["arm"]["end_effector_link"]
+        self._base_frame = _arm_cfg["arm"]["base_frame"]
+        self._arm_joints = _arm_cfg["arm"]["joints"]
+        self._home_position = _arm_cfg["arm"]["home"]  # dict: joint_name -> angle
+        self._base_rotation_joint = _arm_cfg["arm"]["base_rotation_joint"]
+        self._gripper_joint = _arm_cfg["gripper"]["joint_name"]
+        self._gripper_open = _arm_cfg["gripper"]["open_position"]
+        self._gripper_close = _arm_cfg["gripper"]["close_position"]
+        self._gripper_touch_links = _arm_cfg["gripper"]["touch_links"]
+        self._approach_z = _arm_cfg["motion"]["approach_z_offset"]
+        self._descend_z = _arm_cfg["motion"]["descend_z_offset"]
+        self._lift_z = _arm_cfg["motion"]["lift_z_offset"]
+        self._place_lower_z = _arm_cfg["motion"]["place_lower_z_offset"]
+        self._place_lift_z = _arm_cfg["motion"]["place_lift_z_offset"]
 
         # Current positions — initialized from YAML, updated by place/pick
         self.objects = {}
@@ -177,22 +204,28 @@ class ArmController:
         self.open_gripper()
         time.sleep(0.1)
 
-        # Move to approach position (10cm above)
+        # Move to approach position
         _report("approaching object", 0.17)
-        if not self._move_to_position(pos[0], pos[1], pos[2] + 0.1):
+        if not self._move_to_position(pos[0], pos[1], pos[2] + self._approach_z):
             self.logger.error("Failed to move to approach position")
             return False
 
-        # Descend to 2cm above (ACM allows passing through object)
+        # Allow collisions with the object before descending — arm/gripper links
+        # physically overlap the cylinder collision volume during descent
+        self._allow_object_collisions(object_id)
+
+        # Descend to just above object
         _report("descending to grasp", 0.33)
-        if not self._move_to_position(pos[0], pos[1], pos[2] + 0.02, allowed_object=object_id):
+        if not self._move_to_position(pos[0], pos[1], pos[2] + self._descend_z):
             self.logger.error("Failed to approach for grasp")
+            self._disallow_object_collisions(object_id)
             return False
         time.sleep(0.1)
 
         # Descend to object center
-        if not self._move_to_position(pos[0], pos[1], pos[2], allowed_object=object_id):
+        if not self._move_to_position(pos[0], pos[1], pos[2]):
             self.logger.error("Failed to reach grasp position")
+            self._disallow_object_collisions(object_id)
             return False
         time.sleep(0.1)
 
@@ -208,7 +241,7 @@ class ArmController:
 
         # Lift
         _report("lifting", 0.83)
-        self._move_to_position(pos[0], pos[1], pos[2] + 0.1)
+        self._move_to_position(pos[0], pos[1], pos[2] + self._lift_z)
         self.logger.info(f"Pick completed: {object_name}")
         return True
 
@@ -243,14 +276,16 @@ class ArmController:
         if z is None:
             z = self.objects[object_name][2]  # Use original Z of object (where it sits)
 
-        release_z = z - 0.05  # Lower slightly before opening
+        release_z = z - self._place_lower_z  # Lower slightly before opening
 
         self.logger.info(f"Placing {object_name} at ({x:.3f}, {y:.3f}, {release_z:.3f})")
 
         # Step 1: Lower to release position (object stays attached and visible)
         _report("lowering to release position", 0.0)
-        if not self._move_to_position(x, y, release_z, allowed_object=object_name):
+        self._allow_object_collisions(object_name)
+        if not self._move_to_position(x, y, release_z):
             self.logger.warning(f"Could not lower to Z={release_z:.3f}, opening at current position")
+        self._disallow_object_collisions(object_name)
 
         time.sleep(0.1)
 
@@ -267,7 +302,7 @@ class ArmController:
 
         # Step 4: Lift away BEFORE re-adding object (object not in scene — no collision possible)
         _report("lifting away", 0.60)
-        self._move_to_position(x, y, release_z + 0.15)
+        self._move_to_position(x, y, release_z + self._place_lift_z)
 
         # Step 5: Re-add object at intended position (arm is well clear — safe)
         _report("updating scene", 0.80)
@@ -310,12 +345,12 @@ class ArmController:
     def open_gripper(self) -> bool:
         """Open gripper to fully open position."""
         self.logger.info("Opening gripper...")
-        return self._move_gripper(0.0)
+        return self._move_gripper(self._gripper_open)
 
     def close_gripper(self) -> bool:
         """Close gripper to fully closed position."""
         self.logger.info("Closing gripper...")
-        return self._move_gripper(-0.04)
+        return self._move_gripper(self._gripper_close)
 
     def reset(self, on_progress=None) -> bool:
         """Full recovery: detach all, clear scene, open gripper, go home, re-add all objects.
@@ -406,7 +441,7 @@ class ArmController:
         self.logger.info(f"Updating {object_name} position to ({x:.3f}, {y:.3f}, {z:.3f})")
 
         obj = CollisionObject()
-        obj.header.frame_id = "base_link"
+        obj.header.frame_id = self._base_frame
         obj.id = object_name
 
         primitive = SolidPrimitive()
@@ -572,8 +607,9 @@ class ArmController:
         with self._joint_state_lock:
             if self._current_joint_state is None:
                 state = RobotState()
-                state.joint_state.name = ["joint_1", "joint_2", "joint_3", "left_finger_joint"]
-                state.joint_state.position = [0.0, 0.0, 0.0, 0.0]
+                all_joints = self._arm_joints + [self._gripper_joint]
+                state.joint_state.name = all_joints
+                state.joint_state.position = [0.0] * len(all_joints)
                 return state
 
             state = RobotState()
@@ -677,7 +713,7 @@ class ArmController:
 
     def _move_to_joints(self, joint_positions: list) -> bool:
         goal_msg = MoveGroup.Goal()
-        goal_msg.request.group_name = "arm_group"
+        goal_msg.request.group_name = self._arm_group
         goal_msg.request.num_planning_attempts = 10
         goal_msg.request.allowed_planning_time = self.planning_time
         goal_msg.request.max_velocity_scaling_factor = self.max_velocity_scaling
@@ -703,13 +739,13 @@ class ArmController:
 
         return self._send_move_goal(goal_msg)
 
-    def _move_to_position(self, x: float, y: float, z: float, allowed_object: str = None) -> bool:
+    def _move_to_position(self, x: float, y: float, z: float) -> bool:
         self.logger.info(
             f"Planning motion to ({x:.3f}, {y:.3f}, {z:.3f})"
         )
 
         goal_msg = MoveGroup.Goal()
-        goal_msg.request.group_name = "arm_group"
+        goal_msg.request.group_name = self._arm_group
         goal_msg.request.num_planning_attempts = 10
         goal_msg.request.allowed_planning_time = self.planning_time
         goal_msg.request.max_velocity_scaling_factor = self.max_velocity_scaling
@@ -718,8 +754,8 @@ class ArmController:
 
         # Position constraint
         pc = PositionConstraint()
-        pc.header.frame_id = "base_link"
-        pc.link_name = "grasp_link"
+        pc.header.frame_id = self._base_frame
+        pc.link_name = self._eef_link
         pc.weight = 1.0
 
         target_pose = Pose()
@@ -740,10 +776,10 @@ class ArmController:
         goal_constraints = Constraints()
         goal_constraints.position_constraints.append(pc)
 
-        # Joint constraint on joint_1 biased toward natural angle for this XY target
+        # Joint constraint on base rotation joint biased toward natural angle for this XY target
         expected_j1 = math.atan2(y, x)
         jc = JointConstraint()
-        jc.joint_name = "joint_1"
+        jc.joint_name = self._base_rotation_joint
         jc.position = expected_j1
         jc.tolerance_above = 1.5
         jc.tolerance_below = 1.5
@@ -752,13 +788,8 @@ class ArmController:
 
         goal_msg.request.goal_constraints.append(goal_constraints)
 
-        if allowed_object:
-            goal_msg.planning_options.planning_scene_diff = self._make_allowed_collision_diff(
-                allowed_object
-            )
-        else:
-            goal_msg.planning_options.planning_scene_diff.is_diff = True
-            goal_msg.planning_options.planning_scene_diff.robot_state.is_diff = True
+        goal_msg.planning_options.planning_scene_diff.is_diff = True
+        goal_msg.planning_options.planning_scene_diff.robot_state.is_diff = True
 
         goal_msg.planning_options.plan_only = False
         goal_msg.planning_options.replan = True
@@ -766,9 +797,9 @@ class ArmController:
 
         return self._send_move_goal(goal_msg)
 
-    def _move_gripper(self, position: float, allowed_object: str = None) -> bool:
+    def _move_gripper(self, position: float) -> bool:
         goal_msg = MoveGroup.Goal()
-        goal_msg.request.group_name = "gripper_group"
+        goal_msg.request.group_name = self._gripper_group
         goal_msg.request.num_planning_attempts = 5
         goal_msg.request.allowed_planning_time = 2.0
         goal_msg.request.max_velocity_scaling_factor = 0.4
@@ -776,7 +807,7 @@ class ArmController:
         goal_msg.request.start_state = self._get_current_robot_state()
 
         jc = JointConstraint()
-        jc.joint_name = "left_finger_joint"
+        jc.joint_name = self._gripper_joint
         jc.position = position
         jc.tolerance_above = 0.001
         jc.tolerance_below = 0.001
@@ -786,13 +817,8 @@ class ArmController:
         goal_constraints.joint_constraints.append(jc)
         goal_msg.request.goal_constraints.append(goal_constraints)
 
-        if allowed_object:
-            goal_msg.planning_options.planning_scene_diff = self._make_allowed_collision_diff(
-                allowed_object
-            )
-        else:
-            goal_msg.planning_options.planning_scene_diff.is_diff = True
-            goal_msg.planning_options.planning_scene_diff.robot_state.is_diff = True
+        goal_msg.planning_options.planning_scene_diff.is_diff = True
+        goal_msg.planning_options.planning_scene_diff.robot_state.is_diff = True
         goal_msg.planning_options.plan_only = False
         goal_msg.planning_options.replan = False
 
@@ -825,18 +851,71 @@ class ArmController:
 
     def _go_home(self) -> bool:
         self.logger.info("Moving to home position...")
-        return self._move_to_joints([("joint_1", 0.0), ("joint_2", 0.0), ("joint_3", 0.0)])
+        home_joints = [(name, self._home_position[name]) for name in self._arm_joints]
+        return self._move_to_joints(home_joints)
 
-    def _make_allowed_collision_diff(self, object_id: str) -> PlanningScene:
-        acm = AllowedCollisionMatrix()
-        acm.default_entry_names = [object_id]
-        acm.default_entry_values = [True]
+    def _allow_object_collisions(self, object_id: str) -> bool:
+        """Allow collisions between object_id and all robot links.
 
-        scene_diff = PlanningScene()
-        scene_diff.is_diff = True
-        scene_diff.robot_state.is_diff = True
-        scene_diff.allowed_collision_matrix = acm
-        return scene_diff
+        MoveIt2 REPLACES the entire ACM when a PlanningScene diff contains any
+        ACM entries — it does NOT merge. So we must fetch the current ACM first,
+        add our entry, then apply the full result.
+        """
+        acm = self._fetch_current_acm()
+        if acm is None:
+            self.logger.warning(f"Could not fetch ACM — cannot allow collisions with {object_id}")
+            return False
+
+        if object_id not in acm.default_entry_names:
+            acm.default_entry_names.append(object_id)
+            acm.default_entry_values.append(True)
+
+        scene_msg = PlanningScene()
+        scene_msg.is_diff = True
+        scene_msg.robot_state.is_diff = True
+        scene_msg.allowed_collision_matrix = acm
+        result = self._apply_scene_sync(scene_msg)
+        if result:
+            self.logger.info(f"Allowed collisions with {object_id}")
+        else:
+            self.logger.warning(f"Failed to allow collisions with {object_id}")
+        return result
+
+    def _disallow_object_collisions(self, object_id: str) -> bool:
+        """Remove collision allowance for object_id.
+
+        Fetches current ACM, removes the object entry, applies the full result.
+        """
+        acm = self._fetch_current_acm()
+        if acm is None:
+            return False
+
+        if object_id in acm.default_entry_names:
+            idx = acm.default_entry_names.index(object_id)
+            acm.default_entry_names.pop(idx)
+            acm.default_entry_values.pop(idx)
+
+        scene_msg = PlanningScene()
+        scene_msg.is_diff = True
+        scene_msg.robot_state.is_diff = True
+        scene_msg.allowed_collision_matrix = acm
+        return self._apply_scene_sync(scene_msg)
+
+    def _fetch_current_acm(self):
+        """Fetch the current AllowedCollisionMatrix from MoveIt."""
+        if not self._get_scene_client.service_is_ready():
+            self.logger.warning("get_planning_scene service not available")
+            return None
+
+        request = GetPlanningScene.Request()
+        request.components.components = PlanningSceneComponents.ALLOWED_COLLISION_MATRIX
+        future = self._get_scene_client.call_async(request)
+        _wait_for_future(self.node, future, timeout_sec=5.0)
+
+        if future.done() and future.result() is not None:
+            return future.result().scene.allowed_collision_matrix
+        self.logger.warning("Failed to fetch current ACM")
+        return None
 
     def _attach_object(self, object_name: str):
         pos = self.objects[object_name]
@@ -857,16 +936,16 @@ class ArmController:
         pose.orientation.w = 1.0
 
         obj = CollisionObject()
-        obj.header.frame_id = "base_link"
+        obj.header.frame_id = self._base_frame
         obj.id = object_name
         obj.primitives.append(primitive)
         obj.primitive_poses.append(pose)
         obj.operation = CollisionObject.ADD
 
         attached = AttachedCollisionObject()
-        attached.link_name = "grasp_link"
+        attached.link_name = self._eef_link
         attached.object = obj
-        attached.touch_links = ["left_finger", "right_finger", "grasp_link", "gripper_base"]
+        attached.touch_links = self._gripper_touch_links
 
         scene_msg = PlanningScene()
         scene_msg.is_diff = True
@@ -910,7 +989,7 @@ class ArmController:
 
     def _remove_object_from_scene(self, object_name: str):
         obj = CollisionObject()
-        obj.header.frame_id = "base_link"
+        obj.header.frame_id = self._base_frame
         obj.id = object_name
         obj.operation = CollisionObject.REMOVE
 

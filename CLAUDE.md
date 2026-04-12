@@ -24,7 +24,7 @@ Learn ROS2 concepts with a simulated robotic arm + gripper + camera → eventual
 
 ## Quick Reference
 
-**What this is**: ROS2 Jazzy simulation of a 3-DOF arm + gripper. Phase 4 complete — camera + vision pipeline with position updates, 44 integration tests (44/44 passing). No Gazebo, no LLM.
+**What this is**: ROS2 Jazzy simulation of AR4 6-DOF arm + gripper. Phase 4.5 complete — AR4 switch with pick-and-place working, camera + vision pipeline, 44 integration tests (44/44 passing). No Gazebo, no LLM.
 
 **Quick start**: `./run.sh sim` → launches RViz + MoveIt | `./run.sh tests` → runs integration tests
 
@@ -70,7 +70,7 @@ These have caused bugs. Always remember them.
 | Detach object before every `return False` in `place()` | Object stays attached after failed place |
 | After `_detach_object`, call `_remove_object_from_scene` | MoveIt re-adds object at arm position → START_STATE_IN_COLLISION |
 | Always re-add objects with `ObjectColor` after scene removal | Objects reappear green (MoveIt default) |
-| `_make_allowed_collision_diff` must set `robot_state.is_diff = True` | ACM ignored → START_STATE_IN_COLLISION |
+| MoveIt2 ACM diffs are NOT diffs — any non-empty ACM replaces the whole matrix | Must fetch current ACM, merge, then apply. Otherwise SRDF self-collision allowances wiped → OMPL rejects all states |
 | Attach cube with `touch_links` BEFORE `close_gripper()` | Error 99999 (per-plan ACM doesn't work for gripper group) |
 | Use `/apply_planning_scene` service (not topic) for attach/detach | `time.sleep()` doesn't spin executor → race condition |
 | Mimic joints: no command interface in ros2_control | ros2_control crash on startup |
@@ -91,21 +91,18 @@ These have caused bugs. Always remember them.
 
 ## Current State
 
-- ✓ Arm + gripper URDF with MoveIt2 + KDL IK
+- ✓ AR4 6-DOF arm + gripper URDF with MoveIt2 + KDL IK
 - ✓ RViz visualization with colored collision objects
-- ✓ Importable `ArmController` library
+- ✓ Importable `ArmController` library (config-driven via `arm_config.yaml`)
 - ✓ Persistent `motion_server` action server (7 actions + 2 services)
 - ✓ Thin CLI client (sends goals to `motion_server`)
-- ✓ Pick-and-place with planning scene updates
+- ✓ Pick-and-place with planning scene updates (ACM fetch-merge pattern)
 - ✓ `place` CLI accepts optional target position args
 - ✓ YAML-based object config (`objects.yaml`)
 - ✓ Cylinder + box shape support in scene
 - ✓ Basket (tray) as place target
 - ✓ 44 integration tests (error handling, state verification, round-trip, vision) — 44/44 passing
-- ✓ place() visual fixed: object stays attached during lowering
-- ✓ Kuka-style URDF: orange gradient (c1–c4) + horizontal cylindrical knuckles at joints
-- ✓ RViz shows URDF colors (Scene Robot → Show Robot Visual: true)
-- ✓ Camera + vision pipeline (Phase 4) — complete: vision updates scene positions, `move-object` CLI
+- ✓ Camera + vision pipeline — complete: vision updates scene positions, `move-object` CLI
 - ✗ LLM integration (Phase 5)
 
 ## Roadmap
@@ -113,25 +110,22 @@ These have caused bugs. Always remember them.
 - [x] **Phase 1** — CLI motion control, MoveIt2 integration, pick-and-place
 - [x] **Phase 2** — Importable `ArmController` library + YAML config + thin CLI
 - [x] **Phase 3** — Persistent `motion_server` action server + CLI as action client
-- [x] **Phase 4** — Camera + vision pipeline complete: position updates with dead-zone + cooldown + held-object filtering, `move-object` CLI. 42 tests, 44/44 passing. Design: [`doc/camera_vision.md`](doc/camera_vision.md)
+- [x] **Phase 4** — Camera + vision pipeline complete
+- [x] **Phase 4.5** — Switch to AR4 6-DOF arm. ACM fetch-merge fix, object repositioning, 44/44 tests
+- [ ] **Phase 4.6** — Gazebo physics simulation
 - [ ] **Phase 5** — LLM interface: `llm_interface_node` + `validator_node` → natural language → motion server actions
 
 ## Known Limitations
-- 3-DOF: cannot achieve arbitrary orientations
-- 3-DOF: diagonal positions (r > 0.45m) unreliable at low Z — keep objects on-axis or closer
+- AR4 cannot reach z < 0.20 at r > 0.30m (joint limits j2=-42°, j3=-89°)
 - Mock hardware: no physics simulation
 - Object positions reset to YAML defaults if MoveIt restarts
 - MoveIt position tolerance (~1cm) means commanded ≠ actual gripper position
 
 ---
 
-## Latest Session Changes (2026-03-28)
+## Latest Session Changes (2026-04-12)
 
-- **Vision position updates enabled**: `_detected_objects_callback` in motion_server now updates planning scene from vision detections. Three safety mechanisms prevent scene corruption:
-  - **Trylock**: Non-blocking lock acquire — if arm is busy, skip detection (prevents executor thread starvation)
-  - **Held-object filter**: Skip objects attached to arm (camera sees them at arm position, not their real position)
-  - **Per-object cooldown (2s)**: After pick/place/reset, ignore vision for that object (stale camera frame shows pre-action position)
-  - **Dead-zone (2cm)**: Ignore detections within 2cm of known position (pixel quantization noise)
-- **`move-object` CLI command**: `arm move-object <name> <x> <y> <z>` — moves an object in the planning scene via `/move_object` service
-- **Tests consolidated**: 44 → 42 → 44 (added move-object tests). Merged confidence check into `test_all_objects_detected` (eliminated redundant DDS round-trip that timed out under load). Removed camera rate test (system-load dependent, not a camera bug).
-- **Test logs**: `./run.sh tests` saves output to `log/test/output.log`, sim log to `log/test/sim.log`
+- **ACM bug fixed**: `_allow_object_collisions` now fetches current ACM via `/get_planning_scene`, adds entry, applies merged result. Old approach replaced the entire ACM, wiping SRDF self-collision allowances.
+- **`allowed_object` removed** from `_move_to_position()` and `_move_gripper()` — collision allowance handled via persistent scene updates at call site.
+- **Objects repositioned**: z raised from 0.10 to 0.20 (AR4 joint limits prevent reaching z=0.12 at r~0.35m).
+- **Tests updated**: All 44 tests pass with new AR4 coordinates.

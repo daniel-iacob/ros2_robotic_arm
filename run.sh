@@ -15,7 +15,9 @@ usage() {
     echo -e "  ${GREEN}build${NC}   : Build the workspace using colcon"
     echo -e "  ${GREEN}clean${NC}   : Remove build, install, and log folders"
     echo -e "  ${GREEN}sim${NC}     : Launch the entire simulation"
-    echo -e "  ${GREEN}tests${NC}   : Run integration tests (pytest)"
+    echo -e "  ${GREEN}tests${NC}            : Run integration tests (pytest)"
+    echo -e "  ${GREEN}tests --headless${NC} : Run integration tests without RViz"
+    echo -e "  ${GREEN}stop${NC}             : Kill all running ROS2 processes"
     echo -e "${BLUE}------------------------------------------${NC}"
 }
 
@@ -43,6 +45,13 @@ case "$1" in
         echo -e "${BLUE}Cleaning workspace...${NC}"
         rm -rf build/ install/ log/
         ;;
+    stop)
+        echo -e "${BLUE}Stopping all ROS2 processes...${NC}"
+        pkill -9 -f "move_group|robot_state_publisher|controller_manager|ros2_control_node|rviz2|scene_manager|motion_server|camera_node|vision_node" 2>/dev/null || true
+        pkill -9 -f "ros2 launch|ros2 run" 2>/dev/null || true
+        ros2 daemon stop 2>/dev/null || true
+        echo -e "${GREEN}Done.${NC}"
+        ;;
     sim)
         echo -e "${BLUE}Starting Simulation...${NC}"
         source install/setup.bash
@@ -53,7 +62,12 @@ case "$1" in
         find tests/ -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
         source install/setup.bash
         mkdir -p log/test
-        pytest -v -s 2>&1 | tee log/test/output.log
+        if [ "$2" = "--headless" ]; then
+            echo -e "${BLUE}Headless mode: RViz disabled${NC}"
+            HEADLESS=1 pytest -v -s 2>&1 | tee log/test/output.log
+        else
+            pytest -v -s 2>&1 | tee log/test/output.log
+        fi
         exit ${PIPESTATUS[0]}
         ;;
     *)

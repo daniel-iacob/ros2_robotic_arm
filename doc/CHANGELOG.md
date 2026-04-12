@@ -5,6 +5,78 @@ Patterns and constraints: [MEMORY.md](MEMORY.md). Architecture: [architecture.md
 
 ---
 
+## 2026-04-12 — AR4 6-DOF pick-and-place fully working (Phase 4.5 complete)
+
+Fixed the blocker that prevented `arm pick` from working on the AR4 6-DOF arm. 44/44 tests passing.
+
+### ACM fetch-merge fix (root cause of pick failure)
+MoveIt2's `PlanningScene` diff handling **replaces** the entire AllowedCollisionMatrix when any ACM
+entries are present — it does NOT merge. The old `_make_allowed_collision_diff` sent a new ACM with
+only the target object, wiping all SRDF self-collision allowances. OMPL then rejected every sampled
+joint state as self-colliding ("Unable to sample any valid states for goal tree").
+
+Fix: `_allow_object_collisions()` now fetches the live ACM via `/get_planning_scene` with
+`ALLOWED_COLLISION_MATRIX` component, appends the object to `default_entry_names`, and applies
+the full merged result. `_disallow_object_collisions()` does the reverse.
+
+The `allowed_object` parameter was removed from `_move_to_position()` and `_move_gripper()` — collision
+allowance is now managed at the call site via persistent scene updates.
+
+### Object repositioning
+Objects raised from z=0.10 to z=0.20. AR4 joint limits (j2: -42° to 90°, j3: -89° to 52°) prevent
+reaching z=0.12 at horizontal distances > 0.30m. Approach at z=0.30 worked; descend at z=0.22 now works too.
+
+New positions:
+- blue_cylinder: (0.30, -0.25, 0.20)
+- red_cylinder: (0.20, -0.30, 0.20)
+- green_cylinder: (0.25, -0.25, 0.20)
+- basket: (0.30, -0.10, 0.15)
+
+### Tests updated
+All 44 integration tests updated with AR4-reachable coordinates. All passing.
+
+---
+
+## 2026-03-29 — 6-DOF prep: arm_config.yaml + hardcoded value removal
+
+Prepared codebase for AR3 6-DOF migration. All arm-specific values extracted from Python source
+into a single config file. No logic changes — pure decoupling.
+
+### arm_config.yaml created (`src/robotic_arm_bringup/config/arm_config.yaml`)
+
+New config file centralizes all arm-specific values:
+- Planning group names (`arm_group`, `gripper_group`)
+- Joint names (all arm joints + gripper joint)
+- Home position (joint name → angle)
+- End-effector link, base frame, base rotation joint
+- Gripper open/close positions
+- Gripper touch links (for MoveIt attach)
+- Motion offsets: approach height, descend height, lift heights for pick/place
+
+### arm_controller.py — reads all values from config
+
+`load_arm_config()` function added. `ArmController.__init__` loads all arm-specific values into
+instance variables (`self._arm_group`, `self._eef_link`, `self._base_frame`, `self._arm_joints`,
+`self._home_position`, `self._gripper_joint`, `self._gripper_open`, `self._gripper_close`,
+`self._gripper_touch_links`, `self._approach_z`, `self._descend_z`, `self._lift_z`,
+`self._place_lower_z`, `self._place_lift_z`). All 3 hardcoded `"base_link"` frame_id strings
+replaced with `self._base_frame`.
+
+### scene_manager.py — reads base_frame from config
+
+Replaced hardcoded `"base_link"` with `self._base_frame` loaded from `arm_config.yaml`.
+
+### move_to_cube.py deleted
+
+Legacy script predating `ArmController`. Not registered in setup.py, not imported anywhere,
+not called by any launch file or test. Contained ~8 copies of the old hardcoded values.
+
+### Migration plan saved
+
+`doc/switch_to_6_dof.md` — full step-by-step plan for the AR3 switch.
+
+---
+
 ## 2026-03-28 — Phase 4 complete: vision position updates + move-object CLI
 
 ### Vision callback enabled (`_detected_objects_callback`)

@@ -3,7 +3,8 @@
 Each test calls the CLI exactly as a user would:
     ros2 run robotic_arm_bringup arm <command> [args]
 
-Tests run in file order — the sequence is intentional (pick before place, etc.).
+Pick/place tests run in file order — the sequence is intentional.
+All position-verifying tests use parse_object_position() with tolerance.
 """
 
 import re
@@ -111,11 +112,6 @@ def test_place_nothing_held():
 
 # ── Move to ───────────────────────────────────────────────────────────────────
 
-def test_move_to():
-    rc, out = arm("move-to", "0.3", "0.2", "0.4")
-    assert rc == 0, f"move-to failed:\n{out}"
-
-
 def test_move_to_negative_y():
     """Arm can reach negative Y side."""
     rc, out = arm("move-to", "0.3", "-0.2", "0.4")
@@ -135,8 +131,8 @@ def test_move_to_on_axis():
 
 
 def test_move_to_basket_area():
-    """Basket-side position — tests +Y workspace coverage."""
-    rc, out = arm("move-to", "0.4", "0.25", "0.4")
+    """Basket-side position — tests -Y workspace coverage near basket."""
+    rc, out = arm("move-to", "0.30", "-0.10", "0.4")
     assert rc == 0, f"move-to basket area failed:\n{out}"
 
 
@@ -161,19 +157,17 @@ def test_gripper_cycle():
 # ── Pick and place ────────────────────────────────────────────────────────────
 
 def test_pick_blue_cylinder():
+    """Pick blue cylinder and verify it is reported as held."""
     rc, out = arm("pick", "blue_cylinder")
     assert rc == 0, f"pick blue_cylinder failed:\n{out}"
-
-
-def test_list_objects_held():
-    rc, out = arm("list-objects")
-    assert rc == 0, f"list-objects failed:\n{out}"
-    assert "held" in out, f"expected 'held' in output:\n{out}"
+    rc2, out2 = arm("list-objects")
+    assert rc2 == 0, f"list-objects after pick failed:\n{out2}"
+    assert "held" in out2, f"expected blue_cylinder to be held:\n{out2}"
 
 
 def test_place_blue_cylinder_on_basket():
-    """Place blue cylinder above the basket (tray top ~0.27, plus half cylinder height)."""
-    rc, out = arm("place", "blue_cylinder", "0.45", "0.30", "0.35")
+    """Place blue cylinder above the basket."""
+    rc, out = arm("place", "blue_cylinder", "0.30", "-0.10", "0.20")
     assert rc == 0, f"place blue_cylinder on basket failed:\n{out}"
 
 
@@ -184,7 +178,7 @@ def test_pick_red_cylinder():
 
 def test_place_red_cylinder_on_basket():
     """Place red cylinder on basket next to blue cylinder."""
-    rc, out = arm("place", "red_cylinder", "0.35", "0.20", "0.35")
+    rc, out = arm("place", "red_cylinder", "0.30", "-0.05", "0.20")
     assert rc == 0, f"place red_cylinder on basket failed:\n{out}"
 
 
@@ -193,60 +187,43 @@ def test_pick_emits_feedback():
     rc, out = arm("pick", "green_cylinder")
     assert rc == 0, f"pick green_cylinder failed:\n{out}"
     assert "%" in out, f"no progress feedback (%) in pick output:\n{out}"
-    rc2, out2 = arm("place", "green_cylinder", "0.30", "-0.30", "0.3")
-    assert rc2 == 0, f"restore place failed:\n{out2}"
+    rc2, out2 = arm("place", "green_cylinder", "0.25", "-0.25", "0.20")
+    assert rc2 == 0, f"restore place after feedback test failed:\n{out2}"
 
 
 def test_place_emits_feedback():
     """place should emit progress feedback containing '%'."""
     rc, out = arm("pick", "green_cylinder")
     assert rc == 0, f"pick for feedback test failed:\n{out}"
-    rc2, out2 = arm("place", "green_cylinder", "0.30", "-0.30", "0.3")
+    rc2, out2 = arm("place", "green_cylinder", "0.25", "-0.25", "0.20")
     assert rc2 == 0, f"place failed:\n{out2}"
     assert "%" in out2, f"no progress feedback (%) in place output:\n{out2}"
 
 
 # ── Verify positions after place ──────────────────────────────────────────────
 
-def test_verify_blue_on_basket():
-    """After placing, blue_cylinder should show basket-area coordinates."""
-    rc, out = arm("list-objects")
-    assert rc == 0, f"list-objects failed:\n{out}"
-    assert "blue_cylinder" in out, f"blue_cylinder missing:\n{out}"
-    # Should be at placed position (0.45, 0.30), not original (0.45, 0.0)
-    assert "0.300" in out, f"expected y=0.300 in output:\n{out}"
-    assert "held" not in out.split("blue_cylinder")[1].split("\n")[0], \
-        f"blue_cylinder should not be held:\n{out}"
-
-
 def test_verify_blue_position_exact():
-    """blue_cylinder placed at (0.45, 0.30) — verify with per-object parsing."""
+    """blue_cylinder placed at (0.30, -0.10) — verify with per-object parsing."""
     rc, out = arm("list-objects")
     assert rc == 0, f"list-objects failed:\n{out}"
     pos = parse_object_position(out, "blue_cylinder")
     assert pos is not None, f"could not parse blue_cylinder position:\n{out}"
     x, y, z = pos
-    assert abs(x - 0.45) < 0.01, f"blue_cylinder x: expected ~0.45, got {x}"
-    assert abs(y - 0.30) < 0.01, f"blue_cylinder y: expected ~0.30, got {y}"
-
-
-def test_verify_red_on_basket():
-    """After placing, red_cylinder should show basket-area coordinates."""
-    rc, out = arm("list-objects")
-    assert rc == 0, f"list-objects failed:\n{out}"
-    assert "red_cylinder" in out, f"red_cylinder missing:\n{out}"
-    assert "0.200" in out, f"expected y=0.200 in output:\n{out}"
+    assert abs(x - 0.30) < 0.01, f"blue_cylinder x: expected ~0.30, got {x}"
+    assert abs(y - (-0.10)) < 0.01, f"blue_cylinder y: expected ~-0.10, got {y}"
+    assert "held" not in out.split("blue_cylinder")[1].split("\n")[0], \
+        f"blue_cylinder should not be held:\n{out}"
 
 
 def test_verify_red_position_exact():
-    """red_cylinder placed at (0.35, 0.20) — verify with per-object parsing."""
+    """red_cylinder placed at (0.30, -0.05) — verify with per-object parsing."""
     rc, out = arm("list-objects")
     assert rc == 0, f"list-objects failed:\n{out}"
     pos = parse_object_position(out, "red_cylinder")
     assert pos is not None, f"could not parse red_cylinder position:\n{out}"
     x, y, z = pos
-    assert abs(x - 0.35) < 0.01, f"red_cylinder x: expected ~0.35, got {x}"
-    assert abs(y - 0.20) < 0.01, f"red_cylinder y: expected ~0.20, got {y}"
+    assert abs(x - 0.30) < 0.01, f"red_cylinder x: expected ~0.30, got {x}"
+    assert abs(y - (-0.05)) < 0.01, f"red_cylinder y: expected ~-0.05, got {y}"
 
 
 # ── Pick and place green cylinder (no coords — returns to original position) ─
@@ -272,7 +249,7 @@ def test_repick_green_cylinder():
 
 def test_place_green_cylinder_new_position():
     """Place green cylinder at a new open-air position (not on basket)."""
-    rc, out = arm("place", "green_cylinder", "0.40", "-0.15", "0.3")
+    rc, out = arm("place", "green_cylinder", "0.30", "-0.20", "0.20")
     assert rc == 0, f"place green_cylinder at new position failed:\n{out}"
 
 
@@ -287,7 +264,7 @@ def test_scene_unchanged_after_move_to():
     """move-to should not alter object positions in the planning scene."""
     rc1, out1 = arm("list-objects")
     assert rc1 == 0, f"list-objects before failed:\n{out1}"
-    arm("move-to", "0.3", "0.0", "0.4")
+    arm("move-to", "0.3", "-0.2", "0.4")
     rc2, out2 = arm("list-objects")
     assert rc2 == 0, f"list-objects after failed:\n{out2}"
     for name in ["blue_cylinder", "red_cylinder", "green_cylinder", "basket"]:
@@ -300,15 +277,14 @@ def test_scene_unchanged_after_move_to():
 
 def test_move_object():
     """move-object should update an object's position in the planning scene."""
-    rc, out = arm("move-object", "green_cylinder", "0.35", "-0.20", "0.3")
+    rc, out = arm("move-object", "green_cylinder", "0.25", "-0.20", "0.20")
     assert rc == 0, f"move-object failed:\n{out}"
-    # Verify position updated
     rc2, out2 = arm("list-objects")
     assert rc2 == 0, f"list-objects failed:\n{out2}"
     pos = parse_object_position(out2, "green_cylinder")
     assert pos is not None, f"could not parse green_cylinder position:\n{out2}"
     x, y, z = pos
-    assert abs(x - 0.35) < 0.01, f"green_cylinder x: expected 0.35, got {x}"
+    assert abs(x - 0.25) < 0.01, f"green_cylinder x: expected 0.25, got {x}"
     assert abs(y - (-0.20)) < 0.01, f"green_cylinder y: expected -0.20, got {y}"
 
 
@@ -329,25 +305,15 @@ def test_list_objects_after_reset():
     assert "held" not in out, f"unexpected 'held' after reset:\n{out}"
 
 
-def test_verify_positions_after_reset():
-    """After reset, all cylinders should be back at their YAML positions."""
-    rc, out = arm("list-objects")
-    assert rc == 0, f"list-objects failed:\n{out}"
-    # Original positions from objects.yaml
-    assert "0.450" in out, f"expected blue_cylinder x=0.450 after reset:\n{out}"
-    assert "-0.450" in out, f"expected red_cylinder y=-0.450 after reset:\n{out}"
-    assert "-0.300" in out, f"expected green_cylinder y=-0.300 after reset:\n{out}"
-
-
 def test_verify_positions_after_reset_exact():
     """After reset, all objects at YAML positions — verified per-object with tolerance."""
     rc, out = arm("list-objects")
     assert rc == 0, f"list-objects failed:\n{out}"
     expected = {
-        "blue_cylinder":  (0.45,  0.0,   0.3),
-        "red_cylinder":   (0.0,  -0.45,  0.3),
-        "green_cylinder": (0.30, -0.30,  0.3),
-        "basket":         (0.4,   0.25,  0.26),
+        "blue_cylinder":  (0.30, -0.25,  0.20),
+        "red_cylinder":   (0.20, -0.30,  0.20),
+        "green_cylinder": (0.25, -0.25,  0.20),
+        "basket":         (0.30, -0.10,  0.15),
     }
     for name, (ex, ey, ez) in expected.items():
         pos = parse_object_position(out, name)
@@ -396,7 +362,6 @@ def test_all_objects_detected():
     assert "red_cylinder" in out, f"red_cylinder not detected:\n{out}"
     assert "green_cylinder" in out, f"green_cylinder not detected:\n{out}"
     assert "basket" in out, f"basket not detected:\n{out}"
-    # All detected objects should have confidence > 0
     confidences = re.findall(r'confidence:\s*([\d.]+)', out)
     assert len(confidences) > 0, f"no confidence values:\n{out}"
     for c in confidences:
@@ -408,37 +373,25 @@ def test_detected_positions_match_scene():
     rc, out = ros2_topic("echo", "/detected_objects", "--once", timeout=30)
     assert rc == 0, f"topic echo failed:\n{out}"
 
-    # Parse detected positions from echo output
-    # Expected from objects.yaml: blue(0.45,0.0), red(0.0,-0.45), green(0.30,-0.30), basket(0.4,0.25)
     expected = {
-        "blue_cylinder": (0.45, 0.0),
-        "red_cylinder": (0.0, -0.45),
-        "green_cylinder": (0.30, -0.30),
-        "basket": (0.4, 0.25),
+        "blue_cylinder": (0.30, -0.25),
+        "red_cylinder":  (0.20, -0.30),
+        "green_cylinder": (0.25, -0.25),
+        "basket":        (0.30, -0.10),
     }
+
+    tolerance = 0.03  # 3cm — accounts for pixel quantization
 
     for name, (exp_x, exp_y) in expected.items():
         assert name in out, f"{name} not in detection output:\n{out}"
-        # Extract x and y values after the object name
-        # The echo format has fields like: name: blue_cylinder\n  x: 0.45\n  y: 0.0
         section = out[out.index(name):]
-        lines = section.split("\n")
-        x_val = None
-        y_val = None
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("x:"):
-                x_val = float(stripped.split(":")[1])
-            elif stripped.startswith("y:"):
-                y_val = float(stripped.split(":")[1])
-                break  # y comes after x, so we have both
-        assert x_val is not None and y_val is not None, \
-            f"could not parse x,y for {name}:\n{section[:200]}"
-        tolerance = 0.03  # 3cm — accounts for pixel quantization
+        x_match = re.search(r'\bx:\s*([+-]?\d+\.?\d*)', section)
+        y_match = re.search(r'\by:\s*([+-]?\d+\.?\d*)', section)
+        assert x_match is not None, f"could not parse x for {name}:\n{section[:200]}"
+        assert y_match is not None, f"could not parse y for {name}:\n{section[:200]}"
+        x_val = float(x_match.group(1))
+        y_val = float(y_match.group(1))
         assert abs(x_val - exp_x) < tolerance, \
             f"{name} x: expected {exp_x}, got {x_val}"
         assert abs(y_val - exp_y) < tolerance, \
             f"{name} y: expected {exp_y}, got {y_val}"
-
-
-

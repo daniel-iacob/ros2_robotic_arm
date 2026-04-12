@@ -1,4 +1,5 @@
 import atexit
+import os
 import signal
 import subprocess
 import time
@@ -64,10 +65,10 @@ def sim():
 
     print(f"\n[sim] Launching sim... (log: {SIM_LOG})")
     log = open(SIM_LOG, "w")
-    proc = subprocess.Popen(
-        ["ros2", "launch", "robotic_arm_bringup", "arm_system.launch.py"],
-        stdout=log, stderr=log,
-    )
+    launch_args = ["ros2", "launch", "robotic_arm_bringup", "arm_system.launch.py"]
+    if os.environ.get("HEADLESS") == "1":
+        launch_args.append("rviz:=false")
+    proc = subprocess.Popen(launch_args, stdout=log, stderr=log)
 
     # Register cleanup so sim dies even on Ctrl+C / crash
     atexit.register(_kill_sim_processes)
