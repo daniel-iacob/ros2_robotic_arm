@@ -57,7 +57,7 @@ This command gives permission to the applications from the container to show the
 ## Status
 - Install everything from scripts (configuration as code)
 - Run inside docker container
-- AR4 6-DOF robot description + gripper (Kuka-style URDF with colored joints)
+- AR4 6-DOF robot description + gripper — URDF and MoveIt config from https://github.com/Annin-Robotics/ar4_ros_driver
 - MoveIt2 config + KDL IK
 - RViz visualization with colored collision objects
 - Pick-and-place with planning scene updates

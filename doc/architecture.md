@@ -185,11 +185,16 @@ sequenceDiagram
 
 | Package | Role | Key Files |
 |---------|------|-----------|
-| `robotic_arm_description` | Robot model: URDF/xacro, meshes, TF structure | `urdf/robotic_arm.urdf.xacro` |
+| `robotic_arm_description` | Robot model: URDF/xacro, meshes, TF structure — **not authored by this project** (see note below) | `urdf/robotic_arm.urdf.xacro` |
 | `robotic_arm_moveit_config` | MoveIt2 config: planning groups, IK, controllers, joint limits | `config/robotic_arm.srdf`, `config/kinematics.yaml`, `config/moveit_controllers.yaml` |
 | `robotic_arm_interfaces` | ROS2 action/service/message definitions for arm control | `action/*.action`, `srv/ListObjects.srv`, `srv/MoveObject.srv`, `msg/ObjectInfo.msg`, `msg/DetectedObject.msg`, `msg/DetectedObjects.msg` |
 | `robotic_arm_bringup` | Application logic: action server, motion library, CLI client, scene setup | `motion_server.py`, `arm_controller.py`, `arm_cli.py`, `scene_manager.py`, `config/objects.yaml` |
 | `robotic_arm_perception` | Camera + vision pipeline (Phase 4, complete) | `camera_node.py`, `vision_node.py` — see [`doc/camera_vision.md`](camera_vision.md) |
+
+### Robot model origin
+
+The URDF (`robotic_arm.urdf.xacro`) and MoveIt config are used from the AR4 project by Chris Annin:
+https://github.com/Annin-Robotics/ar4_ros_driver
 
 ---
 
