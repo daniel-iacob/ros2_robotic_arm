@@ -54,6 +54,10 @@ xhost +local:root
 This command gives permission to the applications from the container to show the GUI (Graphical User Interface) on the host pc.
 
 
+## Simulation
+
+![Simulation](doc/simulation.png)
+
 ## Status
 - Install everything from scripts (configuration as code)
 - Run inside docker container
