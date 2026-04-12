@@ -210,16 +210,22 @@ class ArmController:
             self.logger.error("Failed to move to approach position")
             return False
 
-        # Descend to just above object (ACM allows passing through object)
+        # Allow collisions with the object before descending — arm/gripper links
+        # physically overlap the cylinder collision volume during descent
+        self._allow_object_collisions(object_id)
+
+        # Descend to just above object
         _report("descending to grasp", 0.33)
-        if not self._move_to_position(pos[0], pos[1], pos[2] + self._descend_z, allowed_object=object_id):
+        if not self._move_to_position(pos[0], pos[1], pos[2] + self._descend_z):
             self.logger.error("Failed to approach for grasp")
+            self._disallow_object_collisions(object_id)
             return False
         time.sleep(0.1)
 
         # Descend to object center
-        if not self._move_to_position(pos[0], pos[1], pos[2], allowed_object=object_id):
+        if not self._move_to_position(pos[0], pos[1], pos[2]):
             self.logger.error("Failed to reach grasp position")
+            self._disallow_object_collisions(object_id)
             return False
         time.sleep(0.1)
 
@@ -276,8 +282,10 @@ class ArmController:
 
         # Step 1: Lower to release position (object stays attached and visible)
         _report("lowering to release position", 0.0)
-        if not self._move_to_position(x, y, release_z, allowed_object=object_name):
+        self._allow_object_collisions(object_name)
+        if not self._move_to_position(x, y, release_z):
             self.logger.warning(f"Could not lower to Z={release_z:.3f}, opening at current position")
+        self._disallow_object_collisions(object_name)
 
         time.sleep(0.1)
 
@@ -731,7 +739,7 @@ class ArmController:
 
         return self._send_move_goal(goal_msg)
 
-    def _move_to_position(self, x: float, y: float, z: float, allowed_object: str = None) -> bool:
+    def _move_to_position(self, x: float, y: float, z: float) -> bool:
         self.logger.info(
             f"Planning motion to ({x:.3f}, {y:.3f}, {z:.3f})"
         )
@@ -780,13 +788,8 @@ class ArmController:
 
         goal_msg.request.goal_constraints.append(goal_constraints)
 
-        if allowed_object:
-            goal_msg.planning_options.planning_scene_diff = self._make_allowed_collision_diff(
-                allowed_object
-            )
-        else:
-            goal_msg.planning_options.planning_scene_diff.is_diff = True
-            goal_msg.planning_options.planning_scene_diff.robot_state.is_diff = True
+        goal_msg.planning_options.planning_scene_diff.is_diff = True
+        goal_msg.planning_options.planning_scene_diff.robot_state.is_diff = True
 
         goal_msg.planning_options.plan_only = False
         goal_msg.planning_options.replan = True
@@ -794,7 +797,7 @@ class ArmController:
 
         return self._send_move_goal(goal_msg)
 
-    def _move_gripper(self, position: float, allowed_object: str = None) -> bool:
+    def _move_gripper(self, position: float) -> bool:
         goal_msg = MoveGroup.Goal()
         goal_msg.request.group_name = self._gripper_group
         goal_msg.request.num_planning_attempts = 5
@@ -814,13 +817,8 @@ class ArmController:
         goal_constraints.joint_constraints.append(jc)
         goal_msg.request.goal_constraints.append(goal_constraints)
 
-        if allowed_object:
-            goal_msg.planning_options.planning_scene_diff = self._make_allowed_collision_diff(
-                allowed_object
-            )
-        else:
-            goal_msg.planning_options.planning_scene_diff.is_diff = True
-            goal_msg.planning_options.planning_scene_diff.robot_state.is_diff = True
+        goal_msg.planning_options.planning_scene_diff.is_diff = True
+        goal_msg.planning_options.planning_scene_diff.robot_state.is_diff = True
         goal_msg.planning_options.plan_only = False
         goal_msg.planning_options.replan = False
 
@@ -856,16 +854,68 @@ class ArmController:
         home_joints = [(name, self._home_position[name]) for name in self._arm_joints]
         return self._move_to_joints(home_joints)
 
-    def _make_allowed_collision_diff(self, object_id: str) -> PlanningScene:
-        acm = AllowedCollisionMatrix()
-        acm.default_entry_names = [object_id]
-        acm.default_entry_values = [True]
+    def _allow_object_collisions(self, object_id: str) -> bool:
+        """Allow collisions between object_id and all robot links.
 
-        scene_diff = PlanningScene()
-        scene_diff.is_diff = True
-        scene_diff.robot_state.is_diff = True
-        scene_diff.allowed_collision_matrix = acm
-        return scene_diff
+        MoveIt2 REPLACES the entire ACM when a PlanningScene diff contains any
+        ACM entries — it does NOT merge. So we must fetch the current ACM first,
+        add our entry, then apply the full result.
+        """
+        acm = self._fetch_current_acm()
+        if acm is None:
+            self.logger.warning(f"Could not fetch ACM — cannot allow collisions with {object_id}")
+            return False
+
+        if object_id not in acm.default_entry_names:
+            acm.default_entry_names.append(object_id)
+            acm.default_entry_values.append(True)
+
+        scene_msg = PlanningScene()
+        scene_msg.is_diff = True
+        scene_msg.robot_state.is_diff = True
+        scene_msg.allowed_collision_matrix = acm
+        result = self._apply_scene_sync(scene_msg)
+        if result:
+            self.logger.info(f"Allowed collisions with {object_id}")
+        else:
+            self.logger.warning(f"Failed to allow collisions with {object_id}")
+        return result
+
+    def _disallow_object_collisions(self, object_id: str) -> bool:
+        """Remove collision allowance for object_id.
+
+        Fetches current ACM, removes the object entry, applies the full result.
+        """
+        acm = self._fetch_current_acm()
+        if acm is None:
+            return False
+
+        if object_id in acm.default_entry_names:
+            idx = acm.default_entry_names.index(object_id)
+            acm.default_entry_names.pop(idx)
+            acm.default_entry_values.pop(idx)
+
+        scene_msg = PlanningScene()
+        scene_msg.is_diff = True
+        scene_msg.robot_state.is_diff = True
+        scene_msg.allowed_collision_matrix = acm
+        return self._apply_scene_sync(scene_msg)
+
+    def _fetch_current_acm(self):
+        """Fetch the current AllowedCollisionMatrix from MoveIt."""
+        if not self._get_scene_client.service_is_ready():
+            self.logger.warning("get_planning_scene service not available")
+            return None
+
+        request = GetPlanningScene.Request()
+        request.components.components = PlanningSceneComponents.ALLOWED_COLLISION_MATRIX
+        future = self._get_scene_client.call_async(request)
+        _wait_for_future(self.node, future, timeout_sec=5.0)
+
+        if future.done() and future.result() is not None:
+            return future.result().scene.allowed_collision_matrix
+        self.logger.warning("Failed to fetch current ACM")
+        return None
 
     def _attach_object(self, object_name: str):
         pos = self.objects[object_name]
