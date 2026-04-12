@@ -4,6 +4,7 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -24,6 +25,7 @@ def load_yaml(package_name, file_path):
 
 def generate_launch_description():
     tf_prefix = LaunchConfiguration("tf_prefix", default="")
+    rviz_enabled = LaunchConfiguration("rviz", default="true")
 
     pkg_description = get_package_share_directory("robotic_arm_description")
     pkg_moveit_config = get_package_share_directory("robotic_arm_moveit_config")
@@ -142,6 +144,7 @@ def generate_launch_description():
             robot_description_kinematics,
             planning_pipeline_config,
         ],
+        condition=IfCondition(rviz_enabled),
     )
 
     # ── robot_state_publisher ───────────────────────────────────────────────
@@ -225,6 +228,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument("tf_prefix", default_value="", description="TF prefix for all joints"),
+        DeclareLaunchArgument("rviz", default_value="true", description="Launch RViz (set false for headless/test runs)"),
         move_group_node,
         rviz_node,
         robot_state_publisher_node,
