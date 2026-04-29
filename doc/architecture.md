@@ -16,9 +16,9 @@
 
 5. **The arm figures out how to move by itself** — you give it a destination, it plans the path, avoids obstacles, and executes the motion. You don't program each joint angle manually.
 
-6. **The project is being built in stages.** Right now it's at stage 2 of 6. The arm can already pick and place objects reliably.
+6. **The project is being built in stages.** Phase 4.5 is complete — AR4 6-DOF arm working with pick-and-place, camera, vision pipeline, and 44 integration tests. Next: Gazebo physics (Phase 4.6), then LLM control (Phase 5).
 
-7. **The next stages will add a camera** so the arm can see the scene, then computer vision to detect objects automatically rather than relying on hardcoded positions.
+7. **The camera and vision pipeline are implemented** — a synthetic top-down camera renders the MoveIt scene and a vision node detects object positions via HSV color detection.
 
 8. **The final goal is voice/text control** — you say "take the blue cube and put it in the basket" and the arm does it, driven by an AI language model.
 
@@ -148,7 +148,9 @@ sequenceDiagram
 - [x] **Phase 1** — CLI motion control (`move_to_cube`), scene manager, MoveIt2 integration, pick-and-place
 - [x] **Phase 2** — Importable motion library (`ArmController`) + YAML config + thin CLI (`arm`)
 - [x] **Phase 3** — `motion_server` node: persistent ROS2 action server; CLI rewritten as action client
-- [x] **Phase 4** — Camera + vision pipeline complete: position updates with dead-zone + cooldown + held-object filtering, `move-object` CLI. 42 tests, 42/42 passing. Design doc: [`doc/camera_vision.md`](camera_vision.md)
+- [x] **Phase 4** — Camera + vision pipeline complete: position updates with dead-zone + cooldown + held-object filtering, `move-object` CLI. Design doc: [`doc/camera_vision.md`](camera_vision.md)
+- [x] **Phase 4.5** — AR4 6-DOF arm switch. ACM fetch-merge fix, objects repositioned to z=0.20, 44/44 tests passing.
+- [ ] **Phase 4.6** — Gazebo physics simulation
 - [ ] **Phase 5** — LLM interface: `llm_interface_node` + `validator_node`; natural language → validated action goals → `motion_server`
 
 ---
@@ -259,7 +261,7 @@ These constraints have caused bugs; remember them when making changes:
 
 6. **`colcon build` required (not `--symlink-install`) for non-Python files** — Python scripts with `--symlink-install` update without rebuild, but config files (YAML, URDF, SRDF) always need a full rebuild.
 
-7. **KDL IK workspace**: 3-DOF arm cannot reach all XYZ positions. Minimum reachable Z depends on XY radius. At radius ~0.36m (e.g. 0.2, 0.3), minimum Z ≈ 0.4. At radius ~0.41m (e.g. 0.4, 0.1), Z = 0.3 is reachable. `place()` auto-retries at Z+0.05 increments.MEMORY.md
+7. **AR4 IK workspace limits**: AR4 joint limits (j2: -42°, j3: -89°) prevent reaching z < 0.20 at r > 0.30m. Objects must be at z ≥ 0.20 for reliable grasping. `place()` auto-retries at Z+0.05 increments.
 
 8. **Never call `rclpy.spin_once(self)` on a node spun by `rclpy.spin()`** — same executor deadlock as `spin_until_future_complete`. This bit `camera_node` in Phase 4.
 

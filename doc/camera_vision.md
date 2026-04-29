@@ -1,6 +1,6 @@
 # Phase 4 — Camera + Vision Pipeline
 
-> **Status**: 26/28 tests passing. Camera renders correctly. Two vision position tests failing — `motion_server` position updates from vision temporarily disabled. See CHANGELOG.md for bug history.
+> **Status**: Complete (Phase 4). Vision callback enabled with trylock + held-object filter + 2s cooldown + 2cm dead-zone. `move-object` CLI added. 44/44 tests passing. See CHANGELOG.md for bug history.
 
 ## Overview
 
@@ -61,7 +61,7 @@ flowchart TD
         B1 -->|/detected_objects| C1["motion_server"]:::keep
     end
 
-    subgraph later["Phase 4.5 — Gazebo"]
+    subgraph later["Phase 4.6 — Gazebo"]
         A2["Gazebo camera\nreal rendered image"]:::swap
         A2 -->|/camera/image_raw| B2
         B2["vision_node\nSAME CODE"]:::keep

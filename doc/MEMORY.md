@@ -15,7 +15,7 @@ Architecture diagrams and design decisions live in `doc/architecture.md`.
 - **Shell wrapper**: `robotic_arm.sh` — forwards to `ros2 run robotic_arm_bringup arm ...`
 - **Interfaces**: `robotic_arm_interfaces` package — `.action`/`.srv`/`.msg` definitions
 - **Object config**: `config/objects.yaml` → single source of truth
-- **Object IDs**: match YAML keys (`blue_cube`, `red_cube`)
+- **Object IDs**: match YAML keys (`blue_cylinder`, `red_cylinder`, `green_cylinder`, `basket`)
 - **State**: lives in `motion_server` memory — no more `/tmp/` cache needed (legacy cache still in code)
 
 ---
@@ -138,7 +138,7 @@ No `command_interface` — only `state_interface`. Mimic info from URDF `<mimic>
 - **Color config from `objects.yaml`** — single source of truth for both `camera_node` and `vision_node`
 - **Z = fixed from YAML** — top-down orthographic camera can't determine height
 - **Design doc**: `doc/camera_vision.md`
-- **Status (2026-03-28)**: Phase 4 complete. Vision callback enabled with trylock + held-object filter + 2s cooldown + 2cm dead-zone. `move-object` CLI added. 42 tests, 42/42 passing.
+- **Status (2026-04-12)**: Phase 4.5 complete. AR4 6-DOF arm working, ACM fetch-merge fix, objects at z=0.20. 44 tests, 44/44 passing.
 
 ## place() — Held-State Validation
 
