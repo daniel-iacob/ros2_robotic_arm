@@ -24,7 +24,7 @@ Learn ROS2 concepts with a simulated robotic arm + gripper + camera → eventual
 
 ## Quick Reference
 
-**What this is**: ROS2 Jazzy simulation of AR4 6-DOF arm + gripper. Phase 4.5 complete — AR4 switch with pick-and-place working, camera + vision pipeline, 44 integration tests (44/44 passing). No Gazebo, no LLM.
+**What this is**: ROS2 Jazzy simulation of AR4 6-DOF arm + gripper. Phase 4.6 in progress — Gazebo simulation running (physics, all controllers active). AR4 6-DOF arm, pick-and-place, camera + vision, 44 tests passing.
 
 **Quick start**: `./run.sh sim` → launches RViz + MoveIt | `./run.sh tests` → runs integration tests
 
@@ -55,7 +55,10 @@ Learn ROS2 concepts with a simulated robotic arm + gripper + camera → eventual
 - MoveIt config: `src/robotic_arm_moveit_config/`
 - Synthetic camera: `src/robotic_arm_perception/robotic_arm_perception/camera_node.py`
 - Vision detection: `src/robotic_arm_perception/robotic_arm_perception/vision_node.py`
-- Launch: `src/robotic_arm_bringup/launch/arm_system.launch.py`
+- Launch (mock): `src/robotic_arm_bringup/launch/arm_system.launch.py`
+- Launch (Gazebo): `src/robotic_arm_bringup/launch/arm_gazebo.launch.py`
+- Gazebo URDF entry: `src/robotic_arm_description/urdf/ar_gazebo.urdf.xacro`
+- Gazebo controllers: `src/robotic_arm_moveit_config/config/ros2_controllers_sim.yaml`
 
 ---
 
@@ -86,6 +89,9 @@ These have caused bugs. Always remember them.
 | Vision callback must use trylock (non-blocking) on `self._lock` | Blocking lock consumes executor threads → MoveGroup result never delivered → 30s timeout on all motions |
 | Vision callback must skip held objects (`self._held_objects`) | Camera sees attached objects at arm position → vision moves them to (0,0) → scene corruption |
 | Vision callback needs per-object cooldown (2s) after actions | Stale camera frame after pick/place → vision overwrites correct position with pre-action position |
+| `gz_ros2_control` 1.2.17 (apt) has a race condition in `initSim` — 200ms wait too short | Segfault on every Gazebo start. Fix: `src/gz_ros2_control/` holds 1.2.18 from upstream GitHub; workspace overlay takes precedence. Remove `src/gz_ros2_control/` once apt ships 1.2.18 |
+| `gz_ros2_control` requires ALL joints in a single `<ros2_control>` block | Two `GazeboSimSystem` hardware blocks: second can't find its joints in Gazebo's ECM → null pointer → segfault |
+| `$(var tf_prefix)` in controllers YAML is NOT substituted when loaded by the Gazebo plugin | Controllers can't find their joints — use `ros2_controllers_sim.yaml` (literal names) for Gazebo; keep `ros2_controllers.yaml` (with prefix) for mock hardware |
 
 ---
 
@@ -103,7 +109,7 @@ These have caused bugs. Always remember them.
 - ✓ Basket (tray) as place target
 - ✓ 44 integration tests (error handling, state verification, round-trip, vision) — 44/44 passing
 - ✓ Camera + vision pipeline — complete: vision updates scene positions, `move-object` CLI
-- ✗ LLM integration (Phase 5)
+- ✓ Gazebo physics simulation — all controllers active, motion server ready
 
 ## Roadmap
 
@@ -123,9 +129,8 @@ These have caused bugs. Always remember them.
 
 ---
 
-## Latest Session Changes (2026-04-12)
+## Latest Session Changes (2026-04-21)
 
-- **ACM bug fixed**: `_allow_object_collisions` now fetches current ACM via `/get_planning_scene`, adds entry, applies merged result. Old approach replaced the entire ACM, wiping SRDF self-collision allowances.
-- **`allowed_object` removed** from `_move_to_position()` and `_move_gripper()` — collision allowance handled via persistent scene updates at call site.
-- **Objects repositioned**: z raised from 0.10 to 0.20 (AR4 joint limits prevent reaching z=0.12 at r~0.35m).
-- **Tests updated**: All 44 tests pass with new AR4 coordinates.
+- **gz_ros2_control 1.2.17 race condition fixed**: `initSim` used 200ms wait — too short, causing null pointer segfault. Source for 1.2.18 added to `src/gz_ros2_control/`; overrides system package via workspace overlay. Remove when apt ships 1.2.18.
+- **Single hardware block**: All joints (arm + gripper) merged into one `<ros2_control name="GazeboSimSystem">` block in `ar_gazebo.ros2_control.xacro`. Two blocks segfault.
+- **Sim-specific controllers yaml**: `$(var tf_prefix)` is not substituted when loaded by the Gazebo plugin. New `ros2_controllers_sim.yaml` uses literal joint names.
