@@ -49,24 +49,25 @@ case "$1" in
         echo -e "${BLUE}Stopping all ROS2 processes...${NC}"
         pkill -9 -f "move_group|robot_state_publisher|controller_manager|ros2_control_node|rviz2|scene_manager|motion_server|camera_node|vision_node" 2>/dev/null || true
         pkill -9 -f "ros2 launch|ros2 run" 2>/dev/null || true
+        pkill -9 -f "gz sim|ruby.*gz" 2>/dev/null || true
         ros2 daemon stop 2>/dev/null || true
         echo -e "${GREEN}Done.${NC}"
         ;;
     sim)
-        echo -e "${BLUE}Starting Simulation...${NC}"
+        echo -e "${BLUE}Starting Simulation (Gazebo)...${NC}"
         source install/setup.bash
-        ros2 launch robotic_arm_bringup arm_system.launch.py
+        ros2 launch robotic_arm_bringup arm_gazebo.launch.py
         ;;
     tests)
-        echo -e "${BLUE}Running integration tests...${NC}"
+        echo -e "${BLUE}Running integration tests (Gazebo)...${NC}"
         find tests/ -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
         source install/setup.bash
         mkdir -p log/test
         if [ "$2" = "--headless" ]; then
             echo -e "${BLUE}Headless mode: RViz disabled${NC}"
-            HEADLESS=1 pytest -v -s 2>&1 | tee log/test/output.log
+            GAZEBO=1 HEADLESS=1 pytest -v -s 2>&1 | tee log/test/output.log
         else
-            pytest -v -s 2>&1 | tee log/test/output.log
+            GAZEBO=1 pytest -v -s 2>&1 | tee log/test/output.log
         fi
         exit ${PIPESTATUS[0]}
         ;;
