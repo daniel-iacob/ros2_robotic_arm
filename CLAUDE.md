@@ -92,6 +92,7 @@ These have caused bugs. Always remember them.
 | `gz_ros2_control` 1.2.17 (apt) has a race condition in `initSim` — 200ms wait too short | Segfault on every Gazebo start. Fix: `src/gz_ros2_control/` holds 1.2.18 from upstream GitHub; workspace overlay takes precedence. Remove `src/gz_ros2_control/` once apt ships 1.2.18 |
 | `gz_ros2_control` requires ALL joints in a single `<ros2_control>` block | Two `GazeboSimSystem` hardware blocks: second can't find its joints in Gazebo's ECM → null pointer → segfault |
 | `$(var tf_prefix)` in controllers YAML is NOT substituted when loaded by the Gazebo plugin | Controllers can't find their joints — use `ros2_controllers_sim.yaml` (literal names) for Gazebo; keep `ros2_controllers.yaml` (with prefix) for mock hardware |
+| Gazebo's URDF→SDF translator rewrites `package://X/...` → `model://X/...`; without `GZ_SIM_RESOURCE_PATH` set to the parent of the package share dir, meshes (visual + collision) silently fail to load | Arm renders empty in Gazebo; arm has zero collision geometry → physics is wrong, not just cosmetic. Gripper survived because `ar_gripper_macro.xacro` uses `file://$(find ...)` (xacro pre-resolves to absolute paths). Set `GZ_SIM_RESOURCE_PATH` in `arm_gazebo.launch.py` |
 
 ---
 

@@ -8,6 +8,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
     RegisterEventHandler,
+    SetEnvironmentVariable,
 )
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
@@ -36,6 +37,21 @@ def generate_launch_description():
     pkg_description = get_package_share_directory("robotic_arm_description")
     pkg_moveit_config = get_package_share_directory("robotic_arm_moveit_config")
     pkg_ros_gz_sim = get_package_share_directory("ros_gz_sim")
+
+    # ── Gazebo resource path ────────────────────────────────────────────────
+    # Gazebo's URDF→SDF translator rewrites `package://robotic_arm_description/...`
+    # to `model://robotic_arm_description/...`. To resolve those, Gazebo searches
+    # GZ_SIM_RESOURCE_PATH for a directory whose name matches the model authority.
+    # We point it at the parent of the package's share dir so
+    # `model://robotic_arm_description/meshes/...` maps to
+    # `<install>/robotic_arm_description/share/robotic_arm_description/meshes/...`.
+    existing_resource_path = os.environ.get("GZ_SIM_RESOURCE_PATH", "")
+    gz_resource_path = os.path.dirname(pkg_description)
+    if existing_resource_path:
+        gz_resource_path = f"{gz_resource_path}:{existing_resource_path}"
+    set_gz_resource_path = SetEnvironmentVariable(
+        name="GZ_SIM_RESOURCE_PATH", value=gz_resource_path
+    )
 
     use_sim_time = {"use_sim_time": True}
 
@@ -288,6 +304,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("tf_prefix", default_value="", description="TF prefix"),
         DeclareLaunchArgument("rviz", default_value="true", description="Launch RViz"),
+        set_gz_resource_path,
         gz_sim,
         clock_bridge,
         robot_state_publisher_node,
