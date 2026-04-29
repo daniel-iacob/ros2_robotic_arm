@@ -6,7 +6,10 @@ import time
 
 import pytest
 
-STARTUP_TIMEOUT = 90
+GAZEBO = os.environ.get("GAZEBO") == "1"
+STARTUP_TIMEOUT = 180 if GAZEBO else 90
+INITIAL_SLEEP = 30 if GAZEBO else 10
+LAUNCH_FILE = "arm_gazebo.launch.py" if GAZEBO else "arm_system.launch.py"
 SIM_LOG = "log/test/sim.log"
 
 
@@ -21,11 +24,14 @@ def _kill_sim_processes():
     subprocess.run(["pkill", "-f", "camera_node"], capture_output=True)
     subprocess.run(["pkill", "-f", "vision_node"], capture_output=True)
     subprocess.run(["pkill", "-f", "arm_system.launch.py"], capture_output=True)
+    subprocess.run(["pkill", "-f", "arm_gazebo.launch.py"], capture_output=True)
+    subprocess.run(["pkill", "-f", "gz sim"], capture_output=True)
+    subprocess.run(["pkill", "-f", "ruby.*gz"], capture_output=True)
 
 
 def _wait_for_ready(proc, timeout=STARTUP_TIMEOUT):
     """Poll list-objects until the action server responds."""
-    time.sleep(10)
+    time.sleep(INITIAL_SLEEP)
     deadline = time.monotonic() + timeout
     attempt = 0
     while time.monotonic() < deadline:
@@ -63,14 +69,13 @@ def sim():
     _kill_sim_processes()
     time.sleep(2)
 
-    print(f"\n[sim] Launching sim... (log: {SIM_LOG})")
+    print(f"\n[sim] Launching {LAUNCH_FILE} (GAZEBO={GAZEBO}, log: {SIM_LOG})")
     log = open(SIM_LOG, "w")
-    launch_args = ["ros2", "launch", "robotic_arm_bringup", "arm_system.launch.py"]
+    launch_args = ["ros2", "launch", "robotic_arm_bringup", LAUNCH_FILE]
     if os.environ.get("HEADLESS") == "1":
         launch_args.append("rviz:=false")
     proc = subprocess.Popen(launch_args, stdout=log, stderr=log)
 
-    # Register cleanup so sim dies even on Ctrl+C / crash
     atexit.register(_kill_sim_processes)
 
     if not _wait_for_ready(proc):

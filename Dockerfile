@@ -21,7 +21,10 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-joint-state-publisher-gui \
     ros-jazzy-xacro \
     ros-jazzy-moveit \
-    ros-jazzy-moveit-py
+    ros-jazzy-moveit-py \
+    ros-jazzy-ros-gz-sim \
+    ros-jazzy-ros-gz-bridge \
+    ros-jazzy-gz-ros2-control
 
 # Clean up apt cache to reduce image size
 RUN rm -rf /var/lib/apt/lists/*

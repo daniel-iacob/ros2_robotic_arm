@@ -1,58 +1,58 @@
 # ros2_robotic_arm
-Use ros2 to control a robotic arm
+Use ROS2 to control a robotic arm inside a Docker container.
 
-It runs inside a Docker container so that the environment can be isolated.
+## Prerequisites
 
-## Tools
-- Ubuntu 24.04
-- ROS2 jazzy (docker images used)
-- Docker 28.1.1
+> **Native Linux is required.** Virtual machines and WSL are not supported —
+> GUI forwarding (`xhost`) does not work reliably in those environments.
+> Install Ubuntu 24.04 natively (bare-metal or dual boot).
 
-## Instalation
-The only tool that has to be manually installed is Docker.
+| Requirement | To run | To develop |
+|-------------|--------|------------|
+| Native Linux (Ubuntu 24.04 recommended) | ✓ | ✓ |
+| Docker | ✓ | ✓ |
+| VSCode | — | ✓ |
 
-Install docker: https://docs.docker.com/engine/install/ubuntu/
+ROS2 Jazzy and all other dependencies are installed automatically inside the Docker container.
 
-All the other dependencies are automatically installed
+## Installation
 
-## VSCode
-VSCode is prefered as it has some useful extensions for ROS and Docker:
-https://code.visualstudio.com/docs/setup/linux
+### Docker
+Install Docker: https://docs.docker.com/engine/install/ubuntu/
 
-Make sure you install all recomended extensions
+### VSCode (required for development)
+Install VSCode: https://code.visualstudio.com/docs/setup/linux
+
+Open the project in VSCode and install all recommended extensions when prompted.
 
 ## Usage
-Everything runs in a docker container (like a small virtual machine).
-The official container osrf/ros:jazzy-desktop is used.
-And the custom tools/packages are installed over it.
 
-Steps:
-1. build and run the container (official image + general dependencies)
-2. build robotic arm project packages
-3. start the entire simulation
+Everything runs inside a Docker container. The official `osrf/ros:jazzy-desktop` image is used as the base, with project tools and packages installed on top.
 
-There are two ways to start the container:
-- VSCode DevContainers: 
-    - it will do automatically the steps 1 and 2 (build and run)
-    - just click op "Reopen in Container button". It will appear when opening the folder in VSCode
-- Manually open a terminal and run: 
-    - ./build_and_run_container.sh
-
-After the container is started
-```bash
-./run.sh build
-./run.sh sim - just starts the rviz simulation
-./run.sh tests - run tests to ensure everything works as expected
-```
-
-## Important
-If the rviz or other GUI is not opening, when running from container,
-execute on the host terminal
+**Step 0 — allow the container to open GUI windows (run once per host session):**
 ```bash
 xhost +local:root
 ```
-This command gives permission to the applications from the container to show the GUI (Graphical User Interface) on the host pc.
 
+**Step 1 — start the container:**
+
+- **VSCode DevContainers** (recommended): click "Reopen in Container" when opening the folder. This automatically builds and runs the container.
+- **Terminal**: run `./build_and_run_container.sh`
+
+**Step 2 — inside the container:**
+```bash
+./run.sh build          # build all ROS2 packages
+./run.sh sim            # start RViz simulation
+./run.sh tests          # run integration tests
+```
+
+## VSCode
+
+VSCode is required for development. It provides DevContainers integration (automatic container build/run) and extensions for ROS2 and Docker.
+
+Install VSCode: https://code.visualstudio.com/docs/setup/linux
+
+Make sure you install all recommended extensions.
 
 ## Simulation
 
@@ -60,7 +60,7 @@ This command gives permission to the applications from the container to show the
 
 ## Status
 - Install everything from scripts (configuration as code)
-- Run inside docker container
+- Run inside Docker container
 - AR4 6-DOF robot description + gripper — URDF and MoveIt config from https://github.com/Annin-Robotics/ar4_ros_driver
 - MoveIt2 config + KDL IK
 - RViz visualization with colored collision objects
@@ -72,12 +72,13 @@ This command gives permission to the applications from the container to show the
 - Integration tests
 
 ## Useful ROS2 commands
-- ros2 node list
-- ros2 topic echo /tf
-- ros2 run tf2_tools view_frames
-- rm -rf build/ install/ log/
+```bash
+ros2 node list
+ros2 topic echo /tf
+ros2 run tf2_tools view_frames
+rm -rf build/ install/ log/
+```
 
 ## Extra documentation
-- [Developement workflow](./doc/dev_workflow.md)
-
+- [Development workflow](./doc/dev_workflow.md)
 - [ROS Flowchart](./doc/ros_flowchart.md)

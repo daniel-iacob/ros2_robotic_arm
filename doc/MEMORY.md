@@ -15,7 +15,7 @@ Architecture diagrams and design decisions live in `doc/architecture.md`.
 - **Shell wrapper**: `robotic_arm.sh` — forwards to `ros2 run robotic_arm_bringup arm ...`
 - **Interfaces**: `robotic_arm_interfaces` package — `.action`/`.srv`/`.msg` definitions
 - **Object config**: `config/objects.yaml` → single source of truth
-- **Object IDs**: match YAML keys (`blue_cube`, `red_cube`)
+- **Object IDs**: match YAML keys (`blue_cylinder`, `red_cylinder`, `green_cylinder`, `basket`)
 - **State**: lives in `motion_server` memory — no more `/tmp/` cache needed (legacy cache still in code)
 
 ---
@@ -123,9 +123,12 @@ No `command_interface` — only `state_interface`. Mimic info from URDF `<mimic>
 
 ---
 
-## open_loop_control
+## Gazebo (gz_ros2_control) — Critical Constraints
 
-`arm_controller` requires `open_loop_control: true` in ros2_controllers.yaml for mock hardware.
+- **Single ros2_control block required**: Two separate `GazeboSimSystem` hardware blocks cause a segfault in `initSim` — the second instance can't find its joints in the ECM. All joints (arm + gripper) must be in one `<ros2_control name="GazeboSimSystem">` block.
+- **gz_ros2_control 1.2.17 is broken**: Has a race condition in `initSim` (200ms sleep was too short). Fixed in 1.2.18 — source lives in `src/gz_ros2_control/` and overrides the system package.
+- **`$(var tf_prefix)` not substituted in Gazebo plugin**: When the Gazebo plugin loads a YAML via `<parameters>`, ROS 2 launch substitutions are not applied. Use `ros2_controllers_sim.yaml` (literal joint names, no prefix) for the Gazebo URDF plugin.
+- **`ros2_controllers.yaml`** (with `$(var tf_prefix)`) stays for mock hardware; **`ros2_controllers_sim.yaml`** (literal names) is used by `ar_gazebo.urdf.xacro`.
 
 ---
 
@@ -138,7 +141,7 @@ No `command_interface` — only `state_interface`. Mimic info from URDF `<mimic>
 - **Color config from `objects.yaml`** — single source of truth for both `camera_node` and `vision_node`
 - **Z = fixed from YAML** — top-down orthographic camera can't determine height
 - **Design doc**: `doc/camera_vision.md`
-- **Status (2026-03-28)**: Phase 4 complete. Vision callback enabled with trylock + held-object filter + 2s cooldown + 2cm dead-zone. `move-object` CLI added. 42 tests, 42/42 passing.
+- **Status (2026-04-12)**: Phase 4.5 complete. AR4 6-DOF arm working, ACM fetch-merge fix, objects at z=0.20. 44 tests, 44/44 passing.
 
 ## place() — Held-State Validation
 
