@@ -1,0 +1,130 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="ar_gazebo_ros2_control" params="
+    ar_model
+    robot_parameters_file
+    tf_prefix
+    include_gripper
+  ">
+
+    <xacro:property name="robot_parameters"
+      value="${xacro.load_yaml(robot_parameters_file)}"/>
+
+    <!-- gz_ros2_control requires ALL joints in a single ros2_control block.
+         Two separate GazeboSimSystem instances cause a segfault in initSim
+         because the second instance can't find its joints in the ECM. -->
+    <ros2_control name="GazeboSimSystem" type="system">
+
+      <hardware>
+        <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+      </hardware>
+
+      <joint name="${tf_prefix}joint_1">
+        <command_interface name="position">
+          <param name="min">${robot_parameters['j1_limit_min']}</param>
+          <param name="max">${robot_parameters['j1_limit_max']}</param>
+        </command_interface>
+        <command_interface name="velocity" />
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+        <state_interface name="velocity">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+      </joint>
+
+      <joint name="${tf_prefix}joint_2">
+        <command_interface name="position">
+          <param name="min">${robot_parameters['j2_limit_min']}</param>
+          <param name="max">${robot_parameters['j2_limit_max']}</param>
+        </command_interface>
+        <command_interface name="velocity" />
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+        <state_interface name="velocity">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+      </joint>
+
+      <joint name="${tf_prefix}joint_3">
+        <command_interface name="position">
+          <param name="min">${robot_parameters['j3_limit_min']}</param>
+          <param name="max">${robot_parameters['j3_limit_max']}</param>
+        </command_interface>
+        <command_interface name="velocity" />
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+        <state_interface name="velocity">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+      </joint>
+
+      <joint name="${tf_prefix}joint_4">
+        <command_interface name="position">
+          <param name="min">${robot_parameters['j4_limit_min']}</param>
+          <param name="max">${robot_parameters['j4_limit_max']}</param>
+        </command_interface>
+        <command_interface name="velocity" />
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+        <state_interface name="velocity">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+      </joint>
+
+      <joint name="${tf_prefix}joint_5">
+        <command_interface name="position">
+          <param name="min">${robot_parameters['j5_limit_min']}</param>
+          <param name="max">${robot_parameters['j5_limit_max']}</param>
+        </command_interface>
+        <command_interface name="velocity" />
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+        <state_interface name="velocity">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+      </joint>
+
+      <joint name="${tf_prefix}joint_6">
+        <command_interface name="position">
+          <param name="min">${robot_parameters['j6_limit_min']}</param>
+          <param name="max">${robot_parameters['j6_limit_max']}</param>
+        </command_interface>
+        <command_interface name="velocity" />
+        <state_interface name="position">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+        <state_interface name="velocity">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+      </joint>
+
+      <!-- Gripper joints in the same hardware block -->
+      <xacro:if value="${include_gripper}">
+        <joint name="${tf_prefix}gripper_jaw1_joint">
+          <command_interface name="position" />
+          <state_interface name="position">
+            <param name="initial_value">0.0</param>
+          </state_interface>
+          <state_interface name="velocity">
+            <param name="initial_value">0.0</param>
+          </state_interface>
+        </joint>
+        <joint name="${tf_prefix}gripper_jaw2_joint">
+          <state_interface name="position">
+            <param name="initial_value">0.0</param>
+          </state_interface>
+          <state_interface name="velocity">
+            <param name="initial_value">0.0</param>
+          </state_interface>
+        </joint>
+      </xacro:if>
+
+    </ros2_control>
+  </xacro:macro>
+</robot>

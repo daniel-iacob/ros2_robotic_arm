@@ -123,9 +123,12 @@ No `command_interface` — only `state_interface`. Mimic info from URDF `<mimic>
 
 ---
 
-## open_loop_control
+## Gazebo (gz_ros2_control) — Critical Constraints
 
-`arm_controller` requires `open_loop_control: true` in ros2_controllers.yaml for mock hardware.
+- **Single ros2_control block required**: Two separate `GazeboSimSystem` hardware blocks cause a segfault in `initSim` — the second instance can't find its joints in the ECM. All joints (arm + gripper) must be in one `<ros2_control name="GazeboSimSystem">` block.
+- **gz_ros2_control 1.2.17 is broken**: Has a race condition in `initSim` (200ms sleep was too short). Fixed in 1.2.18 — source lives in `src/gz_ros2_control/` and overrides the system package.
+- **`$(var tf_prefix)` not substituted in Gazebo plugin**: When the Gazebo plugin loads a YAML via `<parameters>`, ROS 2 launch substitutions are not applied. Use `ros2_controllers_sim.yaml` (literal joint names, no prefix) for the Gazebo URDF plugin.
+- **`ros2_controllers.yaml`** (with `$(var tf_prefix)`) stays for mock hardware; **`ros2_controllers_sim.yaml`** (literal names) is used by `ar_gazebo.urdf.xacro`.
 
 ---
 
